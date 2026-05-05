@@ -590,13 +590,15 @@ export function Proxy() {
                 </div>
             </div>
 
-            {/* SSE Bootstrap 上限：嗅探 mid-stream 限额事件的窗口大小 */}
-            <div className="settings-card">
-                <h3 className="card-title">SSE Bootstrap 嗅探窗口</h3>
-                <div className="setting-item-row">
-                    <div className="setting-item-info">
+            {/* SSE Bootstrap 嗅探窗口：拦截 mid-stream 限额事件的缓冲大小 */}
+            <div className="settings-section">
+                <h3>SSE Bootstrap 嗅探窗口</h3>
+                <div className="setting-item">
+                    <div className="setting-info">
                         <span className="setting-label">字节上限</span>
-                        <span className="setting-desc">读到这么多字节还没见到内容事件就放行（默认 32768）</span>
+                        <span className="setting-desc">
+                            读到这么多字节还没见到内容事件就放行 codex（默认 32768，越大越能逮住慢上游的限额事件）
+                        </span>
                     </div>
                     <div className="threshold-input-group">
                         <input
@@ -617,10 +619,12 @@ export function Proxy() {
                         <span className="threshold-unit">B</span>
                     </div>
                 </div>
-                <div className="setting-item-row">
-                    <div className="setting-item-info">
+                <div className="setting-item">
+                    <div className="setting-info">
                         <span className="setting-label">时间上限</span>
-                        <span className="setting-desc">配合 SSE keep-alive 心跳可以放心拉大（默认 8000ms）</span>
+                        <span className="setting-desc">
+                            等首个内容事件最长等多久（默认 8000ms）。配合 SSE keep-alive 心跳，拉到 30000 也不会让 codex 那头超时。
+                        </span>
                     </div>
                     <div className="threshold-input-group">
                         <input
