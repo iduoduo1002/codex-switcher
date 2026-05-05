@@ -1233,6 +1233,8 @@ async fn try_remote_switch_and_retry(
         }
     };
 
+    // 切号到新账号 → 剥 previous_response_id（同 try_switch_and_retry）
+    let body_for_new_account = strip_previous_response_id(body);
     for attempt in 0..MAX_429_RETRIES {
         let outcome = match crate::remote_client::request_switch(
             &base,
@@ -1268,7 +1270,7 @@ async fn try_remote_switch_and_retry(
                 return None;
             }
         };
-        match forward_and_bootstrap(state, method, upstream_url, base_headers, body, &new_token, session_key)
+        match forward_and_bootstrap(state, method, upstream_url, base_headers, &body_for_new_account, &new_token, session_key)
             .await
         {
             BootstrappedForward::Ok(resp) => {
@@ -1354,6 +1356,9 @@ async fn try_switch_and_retry(
     session_key: Option<&str>,
     reason: SwitchReason,
 ) -> Option<Response<ProxyBody>> {
+    // 切号到新账号 → previous_response_id 是上一个号的 id，新号查不到会 400。
+    // 剥掉它，让新号当全新一轮处理（codex 本来就在 input 里带完整会话历史）。
+    let body_for_new_account = strip_previous_response_id(body);
     for attempt in 0..MAX_429_RETRIES {
         match pick_next_account(state) {
             PickResult::Found { id, token } => {
@@ -1367,7 +1372,7 @@ async fn try_switch_and_retry(
                     method,
                     upstream_url,
                     base_headers,
-                    body,
+                    &body_for_new_account,
                     &token,
                     session_key,
                 )
@@ -1529,7 +1534,9 @@ async fn try_local_fallback(
     let (upstream_url, upstream_host) = get_upstream(is_chatgpt, path_and_query);
     let base_headers = build_upstream_headers(req_headers, upstream_host);
 
-    match forward_and_bootstrap(state, method, &upstream_url, &base_headers, body, &token, session_key).await {
+    // 切号到新账号 → 剥 previous_response_id
+    let body_for_new_account = strip_previous_response_id(body);
+    match forward_and_bootstrap(state, method, &upstream_url, &base_headers, &body_for_new_account, &token, session_key).await {
         BootstrappedForward::Ok(resp) => {
             println!("[Proxy] 本地回退转发成功");
             Some(resp)
@@ -2015,6 +2022,31 @@ async fn bootstrap_with_heartbeats(
 
 /// 给 body 流任务用：换号 + forward → 拿到下一个 upstream 的 raw bytes_stream。
 /// 不做 bootstrap，调用方继续在新流上跑 bootstrap_with_heartbeats。
+/// 切号到新账号时调用：从请求 body 里剥掉 `previous_response_id` 字段。
+/// OpenAI Responses API 的 `previous_response_id` 是按账号绑定的，A 颁发的 id
+/// B 那头查不到 → 返 `previous_response_not_found` (400) → 请求失败。
+/// 剥掉后，新账号当作全新一轮处理；codex CLI/App 本来就在 body.input 里带完整
+/// 会话历史，所以只是冷 cache 一轮，下一轮起 cache 又起来。
+///
+/// 同号 retry（capacity 场景）不应该剥，因为同号那个 id 仍然有效，剥了会丢 cache 续链。
+/// 灵感来自 sub2api PR #2204。
+fn strip_previous_response_id(body: &Bytes) -> Bytes {
+    let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.clone();
+    };
+    let Some(obj) = v.as_object_mut() else {
+        return body.clone();
+    };
+    if obj.remove("previous_response_id").is_some() {
+        match serde_json::to_vec(&v) {
+            Ok(s) => Bytes::from(s),
+            Err(_) => body.clone(),
+        }
+    } else {
+        body.clone()
+    }
+}
+
 /// 用 store.current 的最新 token 在**同账号**上重发一次请求，拿新的 upstream stream。
 /// 给"上游全局容量满 → 同号 backoff retry"用。不切号、不修改 store.current。
 async fn acquire_same_account_upstream(
@@ -2073,7 +2105,9 @@ async fn acquire_replacement_upstream(
         adopt_remote_current(state, &base, &secret, &new_current).await.ok()?;
         invalidate_remote_token_cache();
         let (new_token, _) = get_current_token(state).await.ok()?;
-        let resp = forward_with_token(state, method, upstream_url, base_headers, body, &new_token).await.ok()?;
+        // 切号到新账号 → 剥 previous_response_id
+        let body_for_new = strip_previous_response_id(body);
+        let resp = forward_with_token(state, method, upstream_url, base_headers, &body_for_new, &new_token).await.ok()?;
         if resp.status() != reqwest::StatusCode::OK {
             return None;
         }
@@ -2084,7 +2118,9 @@ async fn acquire_replacement_upstream(
     let pick = pick_next_account(state);
     let PickResult::Found { id, token } = pick else { return None; };
     do_switch(state, &id, reason).ok()?;
-    let resp = forward_with_token(state, method, upstream_url, base_headers, body, &token).await.ok()?;
+    // 切号到新账号 → 剥 previous_response_id
+    let body_for_new = strip_previous_response_id(body);
+    let resp = forward_with_token(state, method, upstream_url, base_headers, &body_for_new, &token).await.ok()?;
     if resp.status() != reqwest::StatusCode::OK {
         return None;
     }
