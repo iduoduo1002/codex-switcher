@@ -1174,9 +1174,9 @@ async fn try_remote_switch_and_retry(
                     .emit("proxy-account-switched", &outcome.name.unwrap_or_default());
                 return Some(resp);
             }
-            BootstrappedForward::RateLimit => {
+            BootstrappedForward::RateLimit | BootstrappedForward::Capacity => {
                 println!(
-                    "[Proxy] 第 {} 次 Server 切号后仍限额（status/流内），再试",
+                    "[Proxy] 第 {} 次 Server 切号后仍限额/容量满，再试",
                     attempt + 1
                 );
                 continue;
@@ -1276,6 +1276,11 @@ async fn try_switch_and_retry(
                     BootstrappedForward::RateLimit => {
                         println!("[Proxy] 第 {} 次切号后仍限额（status/流内）", attempt + 1);
                         mark_current_quota_depleted(state);
+                        continue;
+                    }
+                    BootstrappedForward::Capacity => {
+                        println!("[Proxy] 第 {} 次切号目标号也容量满（全局过载），再试下一个", attempt + 1);
+                        // 容量满不是该号的问题，不要 mark_quota_depleted；直接换下一个看运气
                         continue;
                     }
                     BootstrappedForward::Banned => {
@@ -1431,6 +1436,10 @@ async fn try_local_fallback(
             mark_current_quota_depleted(state);
             None
         }
+        BootstrappedForward::Capacity => {
+            println!("[Proxy] 本地回退碰到全局容量满（不是单号问题）");
+            None
+        }
         BootstrappedForward::Banned => {
             println!("[Proxy] 本地回退账号疑似封号");
             mark_current_banned(state);
@@ -1509,8 +1518,10 @@ type ByteStream =
 enum SseBootstrap {
     /// 安全可下发：已看到内容事件，或缓冲达到上限/超时，让流继续走
     Ready { prefix: Bytes, rest: ByteStream },
-    /// 流前缀里检测到限额事件 → 切号重发
+    /// 流前缀里检测到 per-account 限额事件 → 切号重发
     RateLimitInStream,
+    /// 流前缀里检测到 global 容量满事件 → 同号 backoff retry，不切号
+    CapacityInStream,
     /// 流前缀里检测到封号事件 → 切号重发
     BannedInStream,
 }
@@ -1523,17 +1534,36 @@ fn is_sse_response(resp: &reqwest::Response) -> bool {
         .unwrap_or(false)
 }
 
-/// 检测累计 buffer 是否在 response.failed / error 事件里出现限额关键词
-fn sse_buf_has_rate_limit(buf: &[u8]) -> bool {
+/// 检测前缀里有没有错误事件 + 是 per-account 限额 / global 容量满 / 都不是
+enum SseErrorClass {
+    None,
+    PerAccountLimit,
+    GlobalCapacity,
+}
+
+fn classify_sse_error(buf: &[u8]) -> SseErrorClass {
     let s = String::from_utf8_lossy(buf).to_lowercase();
     let in_failure = s.contains("event: response.failed")
         || s.contains("event: error")
         || s.contains("\"type\":\"response.failed\"")
         || s.contains("\"type\":\"error\"");
     if !in_failure {
-        return false;
+        return SseErrorClass::None;
     }
-    RATE_LIMIT_KEYWORDS.iter().any(|kw| s.contains(kw))
+    // 注意先判 per-account（更具体），再判 global capacity（更通用）。
+    // 若同时命中两类（极端拼接），按 per-account 处理（保守）。
+    if PER_ACCOUNT_LIMIT_KEYWORDS.iter().any(|kw| s.contains(kw)) {
+        return SseErrorClass::PerAccountLimit;
+    }
+    if GLOBAL_CAPACITY_KEYWORDS.iter().any(|kw| s.contains(kw)) {
+        return SseErrorClass::GlobalCapacity;
+    }
+    SseErrorClass::None
+}
+
+/// 兼容老调用：任何 limit/capacity 信号都返回 true
+fn sse_buf_has_rate_limit(buf: &[u8]) -> bool {
+    !matches!(classify_sse_error(buf), SseErrorClass::None)
 }
 
 fn sse_buf_has_banned(buf: &[u8]) -> bool {
@@ -1616,10 +1646,17 @@ async fn read_sse_bootstrap(
         };
         buf.extend_from_slice(&chunk);
 
-        // 顺序很重要：先嗅 rate_limit/banned，再判内容事件。
-        // 防止极端情况下错误事件和内容事件落在同一 chunk 里被误判为安全。
-        if sse_buf_has_rate_limit(&buf) {
-            return SseBootstrap::RateLimitInStream;
+        // 顺序很重要：先嗅错误，再判内容事件。错误又分两类：
+        //   - PerAccountLimit → 切号
+        //   - GlobalCapacity  → 同号 retry
+        match classify_sse_error(&buf) {
+            SseErrorClass::PerAccountLimit => {
+                return SseBootstrap::RateLimitInStream;
+            }
+            SseErrorClass::GlobalCapacity => {
+                return SseBootstrap::CapacityInStream;
+            }
+            SseErrorClass::None => {}
         }
         if sse_buf_has_banned(&buf) {
             return SseBootstrap::BannedInStream;
@@ -1639,8 +1676,10 @@ async fn read_sse_bootstrap(
 enum BootstrappedForward {
     /// 安全可下发的 Response（status 任意，对 200+SSE 已做过 bootstrap）
     Ok(Response<ProxyBody>),
-    /// status 429 或流内 rate_limit 事件 → 调用方应该再切号重试
+    /// status 429 或流内 per-account 限额事件 → 调用方应该再切号重试
     RateLimit,
+    /// 流内全局容量满事件 → 调用方应该 backoff retry **同号**（不切）
+    Capacity,
     /// 流内封号事件 → 调用方应该标记封号并切号重试
     Banned,
     /// 上游连接错误
@@ -1677,6 +1716,7 @@ async fn forward_and_bootstrap(
             build_stream_response_from_parts(status, headers, prefix, rest, Some(state.tracker.clone()), aff),
         ),
         SseBootstrap::RateLimitInStream => BootstrappedForward::RateLimit,
+        SseBootstrap::CapacityInStream => BootstrappedForward::Capacity,
         SseBootstrap::BannedInStream => BootstrappedForward::Banned,
     }
 }
@@ -1830,8 +1870,14 @@ async fn bootstrap_with_heartbeats(
         match next {
             Ok(Some(Ok(chunk))) => {
                 buf.extend_from_slice(&chunk);
-                if sse_buf_has_rate_limit(&buf) {
-                    return SseBootstrap::RateLimitInStream;
+                match classify_sse_error(&buf) {
+                    SseErrorClass::PerAccountLimit => {
+                        return SseBootstrap::RateLimitInStream;
+                    }
+                    SseErrorClass::GlobalCapacity => {
+                        return SseBootstrap::CapacityInStream;
+                    }
+                    SseErrorClass::None => {}
                 }
                 if sse_buf_has_banned(&buf) {
                     return SseBootstrap::BannedInStream;
@@ -1865,6 +1911,25 @@ async fn bootstrap_with_heartbeats(
 
 /// 给 body 流任务用：换号 + forward → 拿到下一个 upstream 的 raw bytes_stream。
 /// 不做 bootstrap，调用方继续在新流上跑 bootstrap_with_heartbeats。
+/// 用 store.current 的最新 token 在**同账号**上重发一次请求，拿新的 upstream stream。
+/// 给"上游全局容量满 → 同号 backoff retry"用。不切号、不修改 store.current。
+async fn acquire_same_account_upstream(
+    state: &Arc<ProxyState>,
+    method: &hyper::Method,
+    upstream_url: &str,
+    base_headers: &reqwest::header::HeaderMap,
+    body: &Bytes,
+) -> Option<ByteStream> {
+    let (token, _) = get_current_token(state).await.ok()?;
+    let resp = forward_with_token(state, method, upstream_url, base_headers, body, &token)
+        .await
+        .ok()?;
+    if resp.status() != reqwest::StatusCode::OK {
+        return None;
+    }
+    Some(resp.bytes_stream().boxed())
+}
+
 async fn acquire_replacement_upstream(
     state: &Arc<ProxyState>,
     method: &hyper::Method,
@@ -1938,6 +2003,8 @@ async fn bootstrap_loop_task(
     let heartbeat = std::time::Duration::from_millis(1500);
     let mut current_upstream = initial_upstream;
     let mut attempts: usize = 0;
+    let mut capacity_attempts: usize = 0;
+    const MAX_CAPACITY_RETRIES: usize = 3;
 
     loop {
         let outcome = bootstrap_with_heartbeats(
@@ -1992,6 +2059,62 @@ async fn bootstrap_loop_task(
                 };
                 // 切号了 → 重新构建 affinity_ctx 用新的 current；旧的 affinity_ctx 引用的还是失败号
                 let _ = &affinity_ctx; // 占位以避免 unused 警告
+                current_upstream = new_up;
+                continue;
+            }
+            SseBootstrap::CapacityInStream => {
+                // 上游全局过载，不是单号问题。先同号 backoff retry，撑不住才换号兜底。
+                capacity_attempts += 1;
+                if capacity_attempts <= MAX_CAPACITY_RETRIES {
+                    let backoff = std::time::Duration::from_secs(2 * capacity_attempts as u64);
+                    println!(
+                        "[Proxy] 上游容量满（全局过载），{}s 后同号 retry ({}/{})",
+                        backoff.as_secs(),
+                        capacity_attempts,
+                        MAX_CAPACITY_RETRIES
+                    );
+                    tokio::time::sleep(backoff).await;
+                    // 用 store.current 的最新 token 在同账号上发新请求
+                    let new_up = match acquire_same_account_upstream(
+                        &state, &method, &upstream_url, &base_headers, &body,
+                    )
+                    .await
+                    {
+                        Some(s) => s,
+                        None => {
+                            let _ = tx.send(Ok(Bytes::from_static(
+                                b"event: response.failed\ndata: {\"error\":{\"message\":\"upstream capacity retry failed\"}}\n\n",
+                            ))).await;
+                            return;
+                        }
+                    };
+                    current_upstream = new_up;
+                    continue;
+                }
+                // 同号 retry 达到上限 → 兜底走切号
+                println!(
+                    "[Proxy] 容量满 retry 用尽 ({} 次)，降级走切号兜底",
+                    MAX_CAPACITY_RETRIES
+                );
+                attempts += 1;
+                if attempts >= MAX_429_RETRIES {
+                    let _ = tx.send(Ok(Bytes::from_static(
+                        b"event: response.failed\ndata: {\"error\":{\"message\":\"upstream at capacity, all retries exhausted\"}}\n\n",
+                    ))).await;
+                    return;
+                }
+                let new_up = match acquire_replacement_upstream(
+                    &state, &method, &upstream_url, &base_headers, &body, SwitchReason::Http429,
+                ).await {
+                    Some(s) => s,
+                    None => {
+                        let _ = tx.send(Ok(Bytes::from_static(
+                            b"event: response.failed\ndata: {\"error\":{\"message\":\"switch failed after capacity\"}}\n\n",
+                        ))).await;
+                        return;
+                    }
+                };
+                capacity_attempts = 0; // 切号后 capacity 计数重置
                 current_upstream = new_up;
                 continue;
             }
@@ -2560,11 +2683,55 @@ async fn handle_websocket(
     Ok(response)
 }
 
-/// 检测 WebSocket 消息是否为限额错误
-/// 只匹配 response.failed 类型的错误消息，避免误判正常消息中的 rate_limit 字段
-/// 限额 / 容量满 / 模型挑选错误关键词（快速文本匹配用）。
-/// "at capacity" / "try a different model" 是 OpenAI 模型池满载时的典型措辞，
-/// 对 codex 来说和限额一样需要切号重试，不能透回给用户看见。
+// ────────────────────────────────────────────────────────────────
+// 错误关键词分类
+// ────────────────────────────────────────────────────────────────
+//
+// 把信号分成两类，因为它们应该走不同的恢复策略：
+//
+//   PER-ACCOUNT 限额：当前号已经把自己 5h / weekly / TPM / RPM 消耗完了。
+//   同号再 retry 还是同样错误。**必须切号**才能继续。
+//
+//   GLOBAL 容量满：OpenAI 那头模型池子过载（gpt-5-codex 一波拥堵之类）。
+//   跟账号无关，所有号都会撞同一个错。同号短暂等几秒再试通常就能继续。
+//   **不应该切号**，浪费账号还触发不必要的额度耗尽标记。
+
+/// per-account 限额信号 —— 命中即切号
+const PER_ACCOUNT_LIMIT_KEYWORDS: &[&str] = &[
+    "rate_limit",
+    "rate limit",
+    "usage_limit",
+    "usage limit",
+    "too many requests",
+    "insufficient_quota",
+    "billing_hard_limit",
+    "tokens per min",
+    "requests per min",
+    "hit your usage limit",
+    "upgrade to plus", // free 号耗尽时的劝升级提示
+];
+
+/// global 容量满信号 —— 命中应该同号 backoff retry，不切号
+const GLOBAL_CAPACITY_KEYWORDS: &[&str] = &[
+    "at capacity",
+    "selected model is at capacity",
+    "try a different model",
+    "model_overloaded",
+    "model overloaded",
+    "service unavailable",
+];
+
+/// 任意限额/容量信号（任一类都算"上游不让发"）
+fn matches_any_limit_signal(lower: &str) -> bool {
+    PER_ACCOUNT_LIMIT_KEYWORDS.iter().any(|kw| lower.contains(kw))
+        || GLOBAL_CAPACITY_KEYWORDS.iter().any(|kw| lower.contains(kw))
+}
+
+fn matches_global_capacity(lower: &str) -> bool {
+    GLOBAL_CAPACITY_KEYWORDS.iter().any(|kw| lower.contains(kw))
+}
+
+/// 老 const，保留是为了避免改太多调用点；语义保持"任何限额/容量信号"。
 const RATE_LIMIT_KEYWORDS: &[&str] = &[
     "rate_limit",
     "rate limit",
@@ -2581,6 +2748,8 @@ const RATE_LIMIT_KEYWORDS: &[&str] = &[
     "model_overloaded",
     "model overloaded",
     "service unavailable",
+    "hit your usage limit",
+    "upgrade to plus",
 ];
 
 fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
@@ -2725,18 +2894,34 @@ async fn bridge_websockets<S1, S2>(
         while let Some(msg) = upstream_read.next().await {
             match msg {
                 Ok(msg) => {
-                    // 检测限额错误：**不要把错误消息转发给 client**（之前的 bug），
-                    // 直接丢弃 + 切号 + 关 WS，让 Codex App 看到干净的连接断开然后重连，
-                    // 而不是看到"Upgrade to Plus"那种刺眼的错误提示。
+                    // 检测错误：**不要把错误消息转发给 client**（之前的 bug），
+                    // 区分两种 case：
+                    //   - per-account 限额：本号已耗尽 → 切号 + 关 WS
+                    //   - global 容量满：上游全局过载 → 不切号，只关 WS
+                    //     codex App 会自动重连，下一次握手如果还容量满就在握手层
+                    //     进 backoff retry（同号），别浪费账号
                     if detect_ws_rate_limit(&msg) {
-                        println!(
-                            "[Proxy] WebSocket 检测到限额，静默切号 + 关 WS（不透回 codex）..."
-                        );
-                        mark_current_quota_depleted(&state_clone);
-                        if let PickResult::Found { id, .. } = pick_next_account(&state_clone) {
-                            let _ = do_switch(&state_clone, &id, SwitchReason::WebSocketRateLimit);
+                        let is_capacity_only = if let tungstenite::Message::Text(ref t) = msg {
+                            let lower = t.to_lowercase();
+                            matches_global_capacity(&lower)
+                                && !PER_ACCOUNT_LIMIT_KEYWORDS.iter().any(|kw| lower.contains(kw))
+                        } else {
+                            false
+                        };
+                        if is_capacity_only {
+                            println!(
+                                "[Proxy] WebSocket 上游容量满（全局过载），关 WS 不切号 → 等 codex App 重连"
+                            );
+                        } else {
+                            println!(
+                                "[Proxy] WebSocket 单号限额，静默切号 + 关 WS"
+                            );
+                            mark_current_quota_depleted(&state_clone);
+                            if let PickResult::Found { id, .. } = pick_next_account(&state_clone) {
+                                let _ = do_switch(&state_clone, &id, SwitchReason::WebSocketRateLimit);
+                            }
                         }
-                        // 主动关 client 侧 WS，让 Codex App 知道这个连接结束了 → 自动重连
+                        // 关 client 侧 WS，让 Codex App 干净断开 + 自动重连
                         let _ = client_write.send(tungstenite::Message::Close(None)).await;
                         break;
                     }
