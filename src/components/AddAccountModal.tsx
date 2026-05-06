@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { readFile } from '@tauri-apps/plugin-fs';
 import { useAccounts } from '../hooks/useAccounts';
 import './AddAccountModal.css';
 
@@ -21,7 +23,44 @@ interface AddAccountModalProps {
     onSuccess?: () => void;  // 添加成功后的回调，用于刷新父组件列表
 }
 
-type TabType = 'official' | 'openai' | 'otp_batch';
+type TabType = 'official' | 'openai' | 'otp_batch' | 'bulk';
+
+interface BulkImportSummary {
+    format: string;
+    parsed: number;
+    errors: string[];
+}
+
+interface BulkParsedAccountInfo {
+    email: string;
+    plan_type: string | null;
+    account_id: string | null;
+    needs_refresh: boolean;
+}
+
+interface BulkImportResult {
+    summaries: BulkImportSummary[];
+    accounts: BulkParsedAccountInfo[];
+    fatal: string[];
+}
+
+const BULK_FORMAT_LABEL: Record<string, string> = {
+    cpa: 'cpa（codex_credentials）',
+    sub2api: 'sub2api',
+    cockpit: 'Cockpit',
+    'four-segment-rt': '四段RT',
+    native: 'codex-switcher',
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+    const CHUNK = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        const slice = bytes.subarray(i, i + CHUNK);
+        binary += String.fromCharCode.apply(null, Array.from(slice));
+    }
+    return btoa(binary);
+}
 
 type OtpProvider = 'usmail' | 'sorryios' | 'nissanserena';
 
@@ -133,6 +172,10 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onSuccess }: AddAccoun
     const [otpTimeout, setOtpTimeout] = useState(180);
     const [otpRows, setOtpRows] = useState<OtpRow[]>([]);
     const [otpRunning, setOtpRunning] = useState(false);
+    // 批量导入
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const [bulkResult, setBulkResult] = useState<BulkImportResult | null>(null);
+    const [bulkError, setBulkError] = useState<string | null>(null);
     // 当前提交：用于失败重试时，把 OtpEntry 数组（含 token）映射回 otpRows 行
     const [otpSubmission, setOtpSubmission] = useState<{
         entries: OtpEntry[];
@@ -245,7 +288,37 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onSuccess }: AddAccoun
             setOtpInput('');
             setOtpRows([]);
         }
+        // 批量导入结果保留到下次打开（用户可能想再回来看），但 bulkBusy 防误触
         onClose();
+    };
+
+    const handleBulkPickAndImport = async () => {
+        setBulkError(null);
+        setBulkResult(null);
+        const selection = await openDialog({
+            multiple: true,
+            filters: [
+                { name: '账号导入文件', extensions: ['json', 'zip', 'txt'] },
+                { name: '所有文件', extensions: ['*'] },
+            ],
+        });
+        const paths: string[] = Array.isArray(selection) ? selection : (selection ? [selection] : []);
+        if (paths.length === 0) return;
+        setBulkBusy(true);
+        try {
+            const files = await Promise.all(paths.map(async (p) => {
+                const bytes = await readFile(p);
+                const filename = p.split('/').pop() || p;
+                return { filename, content_b64: bytesToBase64(bytes) };
+            }));
+            const r = await invoke<BulkImportResult>('bulk_import_accounts', { files });
+            setBulkResult(r);
+            onSuccess?.();
+        } catch (e: any) {
+            setBulkError(`${e}`);
+        } finally {
+            setBulkBusy(false);
+        }
     };
 
     // 邮箱 OTP 批量授权
@@ -377,11 +450,82 @@ export function AddAccountModal({ isOpen, onClose, onAdd, onSuccess }: AddAccoun
                         >
                             邮箱 OTP 批量
                         </button>
+                        <button
+                            className={`tab-item ${activeTab === 'bulk' ? 'active' : ''}`}
+                            onClick={() => !loading && !otpRunning && setActiveTab('bulk')}
+                        >
+                            批量导入文件
+                        </button>
                     </div>
                 </div>
 
                 <div className="modal-body">
-                    {activeTab === 'otp_batch' ? (
+                    {activeTab === 'bulk' ? (
+                        <div className="bulk-panel">
+                            <p className="modal-tip">
+                                自动识别格式，可一次选多个文件：<b>cpa</b>（codex_credentials zip / 单 .json）、
+                                <b> sub2api</b>、<b>Cockpit</b>、<b>四段RT</b>
+                                （<code>email----xxx----xxx----rt_xxx</code>）、
+                                <b> codex-switcher 原生 accounts.json</b>。
+                                同邮箱已存在的账号会跳过，不覆盖现有 token。
+                            </p>
+                            <button
+                                className="btn btn-primary btn-full"
+                                style={{ padding: '14px' }}
+                                onClick={handleBulkPickAndImport}
+                                disabled={bulkBusy}
+                            >
+                                {bulkBusy ? '导入中…' : '选择文件并导入'}
+                            </button>
+                            {bulkError && <div className="error-msg" style={{ marginTop: 12 }}>{bulkError}</div>}
+                            {bulkResult && (
+                                <div className="bulk-result" style={{ marginTop: 16 }}>
+                                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                                        <span className="bulk-stat">解析 {bulkResult.summaries.reduce((s, x) => s + x.parsed, 0)}</span>
+                                        <span className="bulk-stat ok">新增 {bulkResult.accounts.length}</span>
+                                        {bulkResult.summaries.reduce((s, x) => s + x.parsed, 0) - bulkResult.accounts.length > 0 && (
+                                            <span className="bulk-stat skip">
+                                                跳过 {bulkResult.summaries.reduce((s, x) => s + x.parsed, 0) - bulkResult.accounts.length}（同名）
+                                            </span>
+                                        )}
+                                        {bulkResult.fatal.length > 0 && (
+                                            <span className="bulk-stat fail">失败 {bulkResult.fatal.length}</span>
+                                        )}
+                                    </div>
+                                    {bulkResult.summaries.map((s, i) => (
+                                        <div key={i} className="bulk-summary-item">
+                                            <span className="format-tag">{BULK_FORMAT_LABEL[s.format] || s.format}</span>
+                                            <span>解析 {s.parsed} 个账号</span>
+                                        </div>
+                                    ))}
+                                    {bulkResult.fatal.map((msg, i) => (
+                                        <div key={`f-${i}`} className="bulk-fatal">⚠️ {msg}</div>
+                                    ))}
+                                    {bulkResult.accounts.length > 0 && (
+                                        <details style={{ marginTop: 8 }}>
+                                            <summary style={{ cursor: 'pointer', color: '#aaa', fontSize: '12.5px', padding: '6px 0' }}>
+                                                新增账号详情（{bulkResult.accounts.length}）
+                                            </summary>
+                                            <table className="bulk-table">
+                                                <thead>
+                                                    <tr><th>Email</th><th>Plan</th><th>状态</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {bulkResult.accounts.map((a, i) => (
+                                                        <tr key={i}>
+                                                            <td>{a.email}</td>
+                                                            <td>{a.plan_type || '—'}</td>
+                                                            <td>{a.needs_refresh ? <span className="needs-refresh">⚠ 仅 RT，首次请求自动 refresh</span> : '✓ ready'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ) : activeTab === 'otp_batch' ? (
                         <div className="otp-panel">
                             <h3>邮箱 OTP 批量自动授权</h3>
                             <p className="otp-desc">

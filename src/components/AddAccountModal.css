@@ -387,3 +387,73 @@
     border-color: rgba(167, 139, 250, 0.4);
     background: rgba(167, 139, 250, 0.08);
 }
+
+/* 批量导入 tab */
+.bulk-panel {
+    padding: 4px 0;
+}
+
+.bulk-stat {
+    background: #232323;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #ccc;
+}
+.bulk-stat.ok    { color: #10b981; border: 1px solid #1e4a3c; }
+.bulk-stat.skip  { color: #f59e0b; border: 1px solid #4a3a1e; }
+.bulk-stat.fail  { color: #ef4444; border: 1px solid #4a1e1e; }
+
+.bulk-summary-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 10px;
+    background: #1d1d1d;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    color: #ccc;
+}
+
+.bulk-summary-item .format-tag {
+    background: #2c2c2c;
+    color: #aaa;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    min-width: 110px;
+    text-align: center;
+}
+
+.bulk-fatal {
+    color: #f88;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+.bulk-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.bulk-table th {
+    text-align: left;
+    color: #888;
+    font-weight: 500;
+    padding: 6px 8px;
+    border-bottom: 1px solid #2c2c2c;
+}
+
+.bulk-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #232323;
+    color: #cfcfcf;
+}
+
+.bulk-table .needs-refresh {
+    color: #f59e0b;
+    font-size: 11.5px;
+}
