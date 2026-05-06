@@ -3070,7 +3070,9 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
             return false;
         }
 
-        println!("[Proxy] WS 消息包含限额关键词");
+        // 打印命中关键词的消息前 400 字节用于排错
+        let preview: String = text.chars().take(400).collect();
+        println!("[Proxy] WS 消息包含限额关键词，msg 预览: {}", preview);
 
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
             let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -3088,6 +3090,13 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
                 println!("[Proxy] WS 限额: 有 error 字段");
                 return true;
             }
+            // 还有一种格式：response.failed 在 outer，error 在 inner（OpenAI 实际格式）
+            // {"type":"response.failed","sequence_number":N,"response":{"id":..,"status":"failed","error":{"code":"server_overloaded","message":"..."}}}
+            // 已经被前两个 case 覆盖，但加个明确的日志方便排错
+            println!(
+                "[Proxy] WS 限额关键词命中但 JSON 字段不匹配（type={}）",
+                msg_type
+            );
         }
 
         // JSON 解析失败或没有 error 字段，但文本明确包含限额/容量满消息
@@ -3097,6 +3106,7 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
             || lower.contains("at capacity")
             || lower.contains("try a different model")
             || lower.contains("model overloaded")
+            || lower.contains("server_overloaded")
         {
             println!("[Proxy] WS 限额/容量满: 文本兜底匹配");
             return true;
