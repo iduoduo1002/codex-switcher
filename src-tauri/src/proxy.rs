@@ -3006,13 +3006,22 @@ async fn handle_websocket(
 //   **不应该切号**，浪费账号还触发不必要的额度耗尽标记。
 
 /// per-account 限额信号 —— 命中即切号
+///
+/// wire 上真实的错误码（codex-rs/codex-api/src/sse/responses.rs:543-557 +
+/// api_bridge.rs:80-100）：
+/// - `usage_limit_reached` — 该号 plan 配额耗尽 → CodexErr::UsageLimitReached（fatal）
+/// - `insufficient_quota` — 同上 → CodexErr::QuotaExceeded（fatal）
+/// - `usage_not_included` — 该号订阅不含 codex → CodexErr::UsageNotIncluded（fatal）
+/// codex 都不会自己 retry，proxy 必须切号。
 const PER_ACCOUNT_LIMIT_KEYWORDS: &[&str] = &[
+    "usage_limit_reached", // ★ HTTP 429 / SSE response.failed 真实 code
+    "usage_not_included",  // ★ 该号订阅不含 codex
+    "insufficient_quota",  // ★ SSE response.failed 真实 code
     "rate_limit",
     "rate limit",
     "usage_limit",
     "usage limit",
     "too many requests",
-    "insufficient_quota",
     "billing_hard_limit",
     "tokens per min",
     "requests per min",
@@ -3050,15 +3059,17 @@ fn matches_global_capacity(lower: &str) -> bool {
 
 /// 老 const，保留是为了避免改太多调用点；语义保持"任何限额/容量信号"。
 const RATE_LIMIT_KEYWORDS: &[&str] = &[
-    // codex 二进制实际识别的错误码（codex-rs/codex-api/src/sse/responses.rs:566-570）
-    "server_is_overloaded",  // ★ 真正的 capacity 错误码（中间有 _is_）
-    "slow_down",             // ★ 同上
+    // codex 二进制实际识别的错误码（codex-rs/codex-api/src/sse/responses.rs:543-570）
+    "server_is_overloaded",  // ★ 全局 capacity（中间有 _is_）
+    "slow_down",             // ★ 全局 capacity
+    "usage_limit_reached",   // ★ per-account 配额耗尽
+    "usage_not_included",    // ★ 该号订阅不含 codex
+    "insufficient_quota",    // ★ per-account 配额
     "rate_limit",
     "rate limit",
     "usage_limit",
     "usage limit",
     "too many requests",
-    "insufficient_quota",
     "billing_hard_limit",
     "tokens per min",
     "requests per min",
@@ -3115,6 +3126,9 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
         // 注意：server_is_overloaded 才是 codex 真正认的（有 _is_），不是 server_overloaded
         if lower.contains("server_is_overloaded")
             || lower.contains("slow_down")
+            || lower.contains("usage_limit_reached")
+            || lower.contains("usage_not_included")
+            || lower.contains("insufficient_quota")
             || lower.contains("hit your usage limit")
             || lower.contains("rate limit reached")
             || lower.contains("too many requests")
