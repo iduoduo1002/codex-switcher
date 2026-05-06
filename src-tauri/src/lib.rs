@@ -3,6 +3,7 @@
 //! 暴露所有 Tauri 命令供前端调用
 
 mod account;
+mod bulk_import;
 mod ide_control;
 pub mod mailbox;
 pub mod oauth;
@@ -536,6 +537,74 @@ fn set_account_inactive_refresh_enabled(
 fn export_accounts(state: State<AppState>) -> Result<String, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     store.export()
+}
+
+/// 批量导入：自动嗅探 cpa / sub2api / cockpit / 四段RT / native 这 5 种格式。
+/// 前端把每个文件读成 base64（binary 安全）传过来，filename 用来辅助嗅探（zip 后缀等）。
+/// 返回每文件的 summary + 总账号详情，UI 用来给用户预览导入结果。
+#[derive(Debug, serde::Deserialize)]
+pub struct BulkImportFile {
+    pub filename: String,
+    /// 文件内容 base64
+    pub content_b64: String,
+}
+
+#[tauri::command]
+fn bulk_import_accounts(
+    state: State<AppState>,
+    app: tauri::AppHandle,
+    files: Vec<BulkImportFile>,
+) -> Result<bulk_import::BulkImportResult, String> {
+    let mut summaries = Vec::new();
+    let mut all_parsed: Vec<bulk_import::ParsedAccount> = Vec::new();
+    let mut fatal = Vec::new();
+
+    for f in files {
+        match bulk_import::parse_one_file(&f.filename, &f.content_b64) {
+            Ok((format, accounts)) => {
+                summaries.push(bulk_import::ImportSummary {
+                    format,
+                    parsed: accounts.len(),
+                    errors: Vec::new(),
+                });
+                all_parsed.extend(accounts);
+            }
+            Err(e) => {
+                fatal.push(format!("{}: {}", f.filename, e));
+            }
+        }
+    }
+
+    // 落库：按 email 去重 —— 已有同名账号就跳过（不覆盖现有 token，避免误伤）
+    let mut info = Vec::new();
+    {
+        let mut store = state.store.lock().map_err(|e| e.to_string())?;
+        let existing_emails: std::collections::HashSet<String> = store
+            .accounts
+            .values()
+            .map(|a| a.name.clone())
+            .collect();
+        for p in &all_parsed {
+            if existing_emails.contains(&p.email) {
+                continue;
+            }
+            let _ = store.add_account(p.email.clone(), p.auth_json.clone(), None);
+            info.push(bulk_import::BulkParsedAccountInfo {
+                email: p.email.clone(),
+                plan_type: p.plan_type.clone(),
+                account_id: p.account_id.clone(),
+                needs_refresh: p.needs_refresh,
+            });
+        }
+        store.save()?;
+    }
+    crate::tray::update_tray_menu(&app);
+
+    Ok(bulk_import::BulkImportResult {
+        summaries,
+        accounts: info,
+        fatal,
+    })
 }
 
 /// 导入账号配置
@@ -3390,6 +3459,7 @@ pub fn run() {
             set_account_inactive_refresh_enabled,
             export_accounts,
             import_accounts,
+            bulk_import_accounts,
             check_codex_login,
             get_quota_by_id,
             oauth_server::start_oauth_login,

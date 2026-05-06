@@ -7,6 +7,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { useAccounts } from './hooks/useAccounts';
 import { useUsage } from './hooks/useUsage';
 import { AddAccountModal } from './components/AddAccountModal';
+import { BulkImportModal } from './components/BulkImportModal';
 import { Dashboard } from './components/Dashboard';
 import { AccountList } from './components/AccountList';
 import { Settings } from './components/Settings';
@@ -55,6 +56,7 @@ function App() {
     localStorage.setItem('currentPage', currentPage);
   }, [currentPage]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [schedulerError, setSchedulerError] = useState<string | null>(null);
 
   // 冲突确认弹窗状态
@@ -349,6 +351,9 @@ function App() {
         </nav>
 
         <div className="header-actions">
+          <button className="btn btn-secondary" onClick={() => setShowBulkImport(true)} title="自动识别 cpa / sub2api / Cockpit / 四段RT / native 格式">
+            批量导入
+          </button>
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
             + 添加账号
           </button>
@@ -441,6 +446,12 @@ function App() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdd={importCurrent}
+        onSuccess={refresh}
+      />
+
+      <BulkImportModal
+        isOpen={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
         onSuccess={refresh}
       />
 

@@ -12,6 +12,7 @@
     "fs:default",
     "fs:allow-write-text-file",
     "fs:allow-read-text-file",
+    "fs:allow-read-file",
     {
       "identifier": "fs:scope",
       "allow": [
