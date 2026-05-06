@@ -2224,11 +2224,40 @@ async fn bootstrap_loop_task(
                 if !prefix.is_empty() {
                     if tx.send(Ok(prefix)).await.is_err() { return; }
                 }
-                // forward rest（client 那头本来就在听 SSE 流；上游静默时继续发 keep-alive）
+                // forward rest：client 那头本来就在听 SSE 流；上游静默时继续发 keep-alive。
+                // 关键：bootstrap 只能拦 turn 起点错误。turn 跑到中段（已 commit 内容）才出
+                // capacity/限额错误时，bootstrap 窗口早就过了。这里**对每个 chunk 再嗅探一次**：
+                // 检到 mid-stream 错误立即**截断流不转发**给 codex（不让"Selected model is at
+                // capacity"原文到达 codex），codex 看到流意外断开会自动重试这个 turn
+                // (codex-rs 自己的 DEFAULT_STREAM_MAX_RETRIES=5)。比让原文显示给用户好。
+                let mut tail_buf: Vec<u8> = Vec::new();
                 loop {
                     match tokio::time::timeout(heartbeat, rest.next()).await {
-                        Ok(Some(item)) => {
-                            if tx.send(item).await.is_err() { return; }
+                        Ok(Some(Ok(chunk))) => {
+                            // 累计最近 2KB 用于错误事件检测（够覆盖一个完整 SSE 事件）
+                            tail_buf.extend_from_slice(&chunk);
+                            if tail_buf.len() > 4096 {
+                                let drop_n = tail_buf.len() - 2048;
+                                tail_buf.drain(..drop_n);
+                            }
+                            match classify_sse_error(&tail_buf) {
+                                SseErrorClass::PerAccountLimit => {
+                                    println!("[Proxy] mid-stream 检测到 per-account 限额，截断流不转发原文，codex 会自动 retry");
+                                    mark_current_quota_depleted(&state);
+                                    return; // tx drop → client 看到 stream 意外结束 → codex retry
+                                }
+                                SseErrorClass::GlobalCapacity => {
+                                    println!("[Proxy] mid-stream 检测到 global 容量满，截断流不转发原文，codex 会自动 retry");
+                                    return;
+                                }
+                                SseErrorClass::None => {}
+                            }
+                            if tx.send(Ok(chunk)).await.is_err() { return; }
+                        }
+                        Ok(Some(Err(e))) => {
+                            // 上游 chunk 错误，原样透给 client（让 codex 自己处理传输错误）
+                            let _ = tx.send(Err(e)).await;
+                            return;
                         }
                         Ok(None) => return,
                         Err(_) => {
