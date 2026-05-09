@@ -399,6 +399,34 @@ impl Account {
     pub fn is_relay(&self) -> bool {
         self.effective_kind() == AccountKind::Relay
     }
+
+    /// 把账号转成 codex 认识的 auth.json schema。
+    ///
+    /// 关键差异：
+    /// - **ChatGPT 订阅号 / OAuth**: 整个 auth_json 原样写出（含 tokens.id_token /
+    ///   refresh_token / access_token / expires_at），codex 走 Chatgpt OAuth 路径。
+    /// - **Relay 中转账号**: 写 ApiKey 模式 schema —— `{"OPENAI_API_KEY": "<key>"}`，
+    ///   不带 tokens 块。codex 源码 `AuthDotJson::resolved_mode()` 看到
+    ///   `openai_api_key.is_some()` 就走 ApiKey 分支，跳过 id_token / refresh_token
+    ///   校验，也不会主动去 https://auth.openai.com/oauth/token 撞 refresh。
+    ///
+    /// 这个改动修了 codex 0.130 升级后 Relay 当前号 codex.app 报"missing field id_token"
+    /// 的 bug —— 老 schema 用的 tokens 块没填这俩字段，新版反序列化失败。
+    pub fn to_codex_auth_value(&self) -> serde_json::Value {
+        if self.is_relay() {
+            // Relay 的 api_key 历史上存在 auth_json.tokens.access_token；新代码也写在那里。
+            let api_key = self
+                .auth_json
+                .pointer("/tokens/access_token")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            serde_json::json!({
+                "OPENAI_API_KEY": api_key,
+            })
+        } else {
+            self.auth_json.clone()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -642,6 +670,27 @@ impl AccountStore {
         Self::write_codex_auth(&patched)
     }
 
+    /// 防御性归一化：检测到 Relay 风格 auth_json（tokens.account_id 以 "relay:" 开头）
+    /// 时，自动转成 codex ApiKey schema `{"OPENAI_API_KEY": ...}`，
+    /// 避免任何漏改的调用点把 Relay 当 ChatGPT OAuth 写出去（缺 id_token 导致登录失败）。
+    /// 见 codex 源码 codex-rs/login/src/auth/storage.rs::AuthDotJson 的 schema 定义。
+    fn normalize_codex_auth_for_disk(auth: &serde_json::Value) -> serde_json::Value {
+        let is_relay_legacy = auth
+            .pointer("/tokens/account_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.starts_with("relay:"))
+            .unwrap_or(false);
+        if is_relay_legacy {
+            let api_key = auth
+                .pointer("/tokens/access_token")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            return serde_json::json!({ "OPENAI_API_KEY": api_key });
+        }
+        auth.clone()
+    }
+
     pub fn write_codex_auth(auth: &serde_json::Value) -> Result<(), String> {
         let path = Self::codex_auth_path();
         println!("写入 auth.json 到路径: {:?}", path);
@@ -652,8 +701,9 @@ impl AccountStore {
             ensure_private_dir_permissions(parent)?;
         }
 
+        let auth = Self::normalize_codex_auth_for_disk(auth);
         let content =
-            serde_json::to_string_pretty(auth).map_err(|e| format!("序列化失败: {}", e))?;
+            serde_json::to_string_pretty(&auth).map_err(|e| format!("序列化失败: {}", e))?;
 
         // 原子写入：先写临时文件，再重命名
         let tmp_path = path.with_extension("tmp");
@@ -785,7 +835,8 @@ impl AccountStore {
         account.last_used = Some(Utc::now());
 
         println!("正在切换账号: {}", id);
-        Self::write_codex_auth(&account.auth_json)?;
+        // Relay 走 ApiKey schema，订阅号走原 OAuth schema —— 见 to_codex_auth_value 注释。
+        Self::write_codex_auth(&account.to_codex_auth_value())?;
         println!("账号切换成功: auth.json 已更新");
 
         self.current = Some(id.to_string());

@@ -1627,7 +1627,8 @@ async fn adopt_remote_current(
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
         store.sync_account_from_auth_json(new_id, t.auth_json.clone());
         if let Some(acc) = store.accounts.get(new_id) {
-            let auth = acc.auth_json.clone();
+            // Relay 走 ApiKey schema、订阅号走 OAuth schema —— 见 to_codex_auth_value 注释。
+            let auth = acc.to_codex_auth_value();
             // adopt_remote_current 是 client 模式的换号路径，扩展 expires_at 防 codex 自刷
             crate::account::AccountStore::write_codex_auth_extended_expiry(&auth)
                 .map_err(|e| format!("写 auth.json 失败: {}", e))?;
