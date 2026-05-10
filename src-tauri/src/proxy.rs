@@ -3723,10 +3723,6 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
             return false;
         }
 
-        // 打印命中关键词的消息前 400 字节用于排错
-        let preview: String = text.chars().take(400).collect();
-        println!("[Proxy] WS 消息包含限额关键词，msg 预览: {}", preview);
-
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
             let msg_type = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -3749,16 +3745,17 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
                 println!("[Proxy] WS 限额: 有 error 字段");
                 return true;
             }
-            // 还有一种格式：response.failed 在 outer，error 在 inner（OpenAI 实际格式）
-            // {"type":"response.failed","sequence_number":N,"response":{"id":..,"status":"failed","error":{"code":"server_overloaded","message":"..."}}}
-            // 已经被前两个 case 覆盖，但加个明确的日志方便排错
-            println!(
-                "[Proxy] WS 限额关键词命中但 JSON 字段不匹配（type={}）",
-                msg_type
-            );
+
+            // JSON 解析成功但没有 error 字段 → 是合法事件（response.created /
+            // codex.rate_limits / response.output_text.delta 等都会嵌 codex
+            // system prompt，prompt 里含有 "rate limit" "too many requests"
+            // 等子串，绝对不能再走文本兜底，否则任何 in_progress 都会被误判
+            // 成限额，触发无限切号循环）
+            let _ = msg_type;
+            return false;
         }
 
-        // JSON 解析失败或没有 error 字段，但文本明确包含限额/容量满消息
+        // JSON 解析失败时才走文本兜底（极少见：上游发了非 JSON 文本帧）
         // 注意：server_is_overloaded 才是 codex 真正认的（有 _is_），不是 server_overloaded
         if lower.contains("server_is_overloaded")
             || lower.contains("slow_down")
@@ -3772,7 +3769,7 @@ fn detect_ws_rate_limit(msg: &tungstenite::Message) -> bool {
             || lower.contains("try a different model")
             || lower.contains("model overloaded")
         {
-            println!("[Proxy] WS 限额/容量满: 文本兜底匹配");
+            println!("[Proxy] WS 限额/容量满: 非 JSON 文本兜底匹配");
             return true;
         }
     }
