@@ -39,17 +39,23 @@ Codex Switcher 是一个面向 Codex CLI / ChatGPT 多账号工作流的桌面�
 
 ## 界面预览
 
-### 配额总览和账号池
+### 桌面应用
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher dashboard showing quota usage, active account status, and proxy activity" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
 
-### 多账号管理
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher account management screen with multiple account types and switch controls" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
 
-### 代理、Relay 和自动切号设置
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/4.png" alt="Codex Switcher screenshot 4" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher settings screen for local proxy, relay compatibility, and automatic switching" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/5.png" alt="Codex Switcher screenshot 5" width="100%">
+
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/6.png" alt="Codex Switcher screenshot 6" width="100%">
+
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/7.png" alt="Codex Switcher screenshot 7" width="100%">
+
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/8.png" alt="Codex Switcher screenshot 8" width="100%">
 
 ## 为什么需要它
 
