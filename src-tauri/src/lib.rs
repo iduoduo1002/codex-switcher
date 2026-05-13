@@ -1817,8 +1817,62 @@ pub fn start_quota_refresh(
                     Ok(base) => {
                         match crate::remote_client::fetch_all_quota(&base, &secret).await {
                             Ok(entries) => {
-                                let remote_ids: std::collections::HashSet<String> =
+                                let mut remote_ids: std::collections::HashSet<String> =
                                     entries.iter().map(|e| e.id.clone()).collect();
+
+                                // 1.5) 后台补推：本机有 / Server 没有的账号，先尝试推一次到 Server。
+                                //      场景：OAuth 登录瞬间 push 失败（Mini Mac 短暂 502 / 网络抖动）
+                                //      → quota_refresh 自动补推，永不丢号。推成功的 id 加入 remote_ids，
+                                //      下一步 prune 自动跳过。
+                                //      只对 client 模式下、本地有 refresh_token 或 access_token 的账号 push；
+                                //      Relay 账号也参与（它们靠 access_token 进 auth_json.tokens）。
+                                let push_candidates: Vec<crate::account::Account> = {
+                                    if let Ok(s) = store.lock() {
+                                        s.accounts
+                                            .values()
+                                            .filter(|a| !remote_ids.contains(&a.id))
+                                            .cloned()
+                                            .collect()
+                                    } else {
+                                        Vec::new()
+                                    }
+                                };
+                                let mut pushed_now = 0usize;
+                                for cand in push_candidates {
+                                    match crate::remote_client::upsert_account(
+                                        &base, &secret, &cand,
+                                    )
+                                    .await
+                                    {
+                                        Ok(outcome) => {
+                                            println!(
+                                                "[QuotaRefresh] 后台补推成功: id={} name={} action={}",
+                                                cand.id, cand.name, outcome.upserted
+                                            );
+                                            remote_ids.insert(cand.id.clone());
+                                            if outcome.upserted == "merged"
+                                                && outcome.id != cand.id
+                                            {
+                                                remote_ids.insert(outcome.id.clone());
+                                            }
+                                            pushed_now += 1;
+                                        }
+                                        Err(e) => {
+                                            // 不丢，由 10 分钟宽限期保护；下个 5 分钟周期继续重试
+                                            eprintln!(
+                                                "[QuotaRefresh] 后台补推失败 id={} name={}: {}",
+                                                cand.id, cand.name, e
+                                            );
+                                        }
+                                    }
+                                }
+                                if pushed_now > 0 {
+                                    println!(
+                                        "[QuotaRefresh] 后台补推完成: {} 条新账号同步到 Server",
+                                        pushed_now
+                                    );
+                                }
+
                                 let (updated, pruned) = {
                                     let mut updated = 0usize;
                                     let mut pruned = 0usize;
@@ -1844,15 +1898,37 @@ pub fn start_quota_refresh(
                                         // 2) 删除 Server 上已不存在的账号（多端删号同步）
                                         // Relay 账号也参与 prune：add_relay_account 现在会 upsert 到 Server，
                                         // Server 上有这账号就不会被 prune。
+                                        //
+                                        // 但是新加的账号给 10 分钟宽限期：登录成功瞬间 push_account_to_server
+                                        // 失败（例如 Server 502 / 短暂网络抖动）的情况下，原逻辑会在下一次
+                                        // quota_refresh 5 分钟周期到时把这个本地账号悄悄删掉，用户视角是
+                                        // "刚登的号过一会就不见了"。宽限窗内不 prune，给后续 push 重试机会，
+                                        // 也给用户手动重推留时间。
+                                        let now = chrono::Utc::now();
+                                        let grace = chrono::Duration::minutes(10);
                                         let local_ids: Vec<String> =
                                             s.accounts.keys().cloned().collect();
                                         for id in local_ids {
-                                            if !remote_ids.contains(&id) {
-                                                s.accounts.remove(&id);
-                                                pruned += 1;
-                                                if s.current.as_deref() == Some(id.as_str()) {
-                                                    s.current = None;
+                                            if remote_ids.contains(&id) {
+                                                continue;
+                                            }
+                                            // 宽限：created_at 在 10 分钟内的不 prune
+                                            if let Some(acc) = s.accounts.get(&id) {
+                                                let age = now.signed_duration_since(acc.created_at);
+                                                if age < grace {
+                                                    println!(
+                                                        "[QuotaRefresh] 跳过 prune（{}s 宽限期内）: id={} name={}",
+                                                        age.num_seconds(),
+                                                        id,
+                                                        acc.name
+                                                    );
+                                                    continue;
                                                 }
+                                            }
+                                            s.accounts.remove(&id);
+                                            pruned += 1;
+                                            if s.current.as_deref() == Some(id.as_str()) {
+                                                s.current = None;
                                             }
                                         }
                                         let _ = s.save();

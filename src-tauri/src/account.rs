@@ -593,6 +593,11 @@ impl AccountStore {
         if store.backfill_refresh_tokens() {
             let _ = store.save();
         }
+        // 注意：promote_legacy_to_relay 必须先于 migrate_relay_category 跑。
+        // 后者只在 kind==Relay 时填 relay_category，所以要先把 legacy promote 上去。
+        if store.promote_legacy_to_relay_by_notes() {
+            let _ = store.save();
+        }
         if store.migrate_glm_usage_preset() {
             let _ = store.save();
         }
@@ -607,6 +612,83 @@ impl AccountStore {
         }
 
         store
+    }
+
+    /// 一次性迁移：把"老 legacy 账号但其实是 Relay"的记录升级到 `kind = Relay`。
+    ///
+    /// 历史背景：早期 add_relay_account 把 kind 留作默认 Legacy，效果上看 UI badge
+    /// 通过 `effective_kind()` 派生（token "eyJ..." → ChatGPT，"sk-..." → OpenaiKey）
+    /// —— 对 DeepSeek/FreeModel 这种 sk-/fe- 开头的 Relay token，UI 会把它们
+    /// 标成 "API"，并且 `migrate_relay_category` 跳过它们（只看 kind==Relay）。
+    ///
+    /// 识别条件（保守）：legacy + 有 `from preset:<id>` notes，preset id 对得上
+    /// 一个已知的 Relay preset。这种几乎确定是当时 add_relay_account 留下的。
+    /// 顺便填上 relay_base_url / relay_protocol / relay_model_map 等基本信息，
+    /// migrate_relay_category 再补 category。
+    fn promote_legacy_to_relay_by_notes(&mut self) -> bool {
+        // (preset_id, base_url, relay_protocol, fallback_model)
+        // 跟 src/data/relay_presets.ts 对齐，覆盖 0.5.30 之前可能没被标 Relay 的 preset。
+        // 这里只填路由必要字段；详细的 model_map 留给运行时（UI 修过的也尊重）。
+        const KNOWN_RELAY_PRESETS: &[(&str, &str, &str, &str)] = &[
+            ("deepseek_api", "https://api.deepseek.com/v1", "chat_completions", "deepseek-v4-pro"),
+            ("moonshot_kimi", "https://api.moonshot.cn/v1", "chat_completions", "kimi-k2-turbo-preview"),
+            ("minimax_api", "https://api.minimaxi.com/v1", "chat_completions", "MiniMax-M2"),
+            ("alibaba_dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "chat_completions", "qwen-max"),
+            ("tencent_hunyuan", "https://api.hunyuan.cloud.tencent.com/v1", "chat_completions", "hunyuan-large"),
+            ("baidu_qianfan", "https://qianfan.baidubce.com/v2", "chat_completions", "ernie-4.5-turbo-128k"),
+            ("fireworks_ai", "https://api.fireworks.ai/inference/v1", "chat_completions", "accounts/fireworks/models/kimi-k2-instruct"),
+            ("stepfun_step", "https://api.stepfun.com/v1", "chat_completions", "step-2-16k"),
+            ("openrouter", "https://openrouter.ai/api/v1", "chat_completions", "anthropic/claude-3.5-sonnet"),
+            ("volcengine_ark", "https://ark.cn-beijing.volces.com/api/v3", "chat_completions", "doubao-pro-32k"),
+            ("ucloud_modelverse", "https://api.modelverse.cn/v1", "chat_completions", "deepseek-v3.1"),
+            ("glm", "https://open.bigmodel.cn/api/paas/v4", "chat_completions", "glm-5.1"),
+            ("glm_coding", "https://open.bigmodel.cn/api/coding/paas/v4", "chat_completions", "glm-5.1"),
+            ("mimo_token_plan_sgp", "https://token-plan-sgp.xiaomimimo.com/v1", "chat_completions", "mimo-v2.5-pro"),
+            ("mimo_api_pay", "https://api.xiaomimimo.com/v1", "chat_completions", "mimo-v2.5-pro"),
+            ("generic_responses_relay", "", "responses", ""),
+            ("aiberm", "", "responses", ""),
+            ("whatai", "", "responses", ""),
+            ("modelscope", "https://api-inference.modelscope.cn/v1", "chat_completions", "Qwen/Qwen2.5-72B-Instruct"),
+            ("freemodel", "https://api.freemodel.dev", "responses", ""),
+        ];
+        let mut changed = false;
+        for acc in self.accounts.values_mut() {
+            if !matches!(acc.kind, AccountKind::Legacy) {
+                continue;
+            }
+            // 识别 preset id：notes 形如 "from preset:deepseek_api"
+            let preset_id: Option<String> = acc
+                .notes
+                .as_deref()
+                .and_then(|n| n.split("from preset:").nth(1))
+                .map(|s| s.trim().split_whitespace().next().unwrap_or("").to_string())
+                .filter(|s| !s.is_empty());
+            let Some(pid) = preset_id else { continue };
+            let Some((_, base, protocol, fallback)) = KNOWN_RELAY_PRESETS
+                .iter()
+                .find(|(id, _, _, _)| *id == pid)
+            else {
+                continue;
+            };
+            // 升级 kind
+            acc.kind = AccountKind::Relay;
+            // 只在字段缺失时填，绝不覆盖用户改过的设置
+            if acc.relay_base_url.is_none() && !base.is_empty() {
+                acc.relay_base_url = Some(base.to_string());
+            }
+            if acc.relay_protocol.is_none() {
+                acc.relay_protocol = Some(protocol.to_string());
+            }
+            if acc.relay_model_fallback.is_none() && !fallback.is_empty() {
+                acc.relay_model_fallback = Some(fallback.to_string());
+            }
+            println!(
+                "[Migration] legacy → relay：{} (preset={}, base={})",
+                acc.name, pid, base
+            );
+            changed = true;
+        }
+        changed
     }
 
     /// 一次性迁移：清掉所有 Relay 账号的 `is_token_invalid` 标记。
