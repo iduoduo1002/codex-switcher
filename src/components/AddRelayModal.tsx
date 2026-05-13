@@ -380,7 +380,9 @@ export function AddRelayModal({ isOpen, onClose, onSuccess }: AddRelayModalProps
             setError('Base URL 必须以 http:// 或 https:// 开头');
             return;
         }
-        if (apiKey.trim().length < 8) { setError('API Key 看起来太短'); return; }
+        // Ollama 等本地推理不需要真 key，宽松校验：非空 + ≥1 字符即可。
+        // 真的 sk- / tp- key 通常 ≥30 字符，这里不卡死方便本地场景。
+        if (apiKey.trim().length < 1) { setError('API Key 不能为空'); return; }
         if (usagePreset === 'mimo_token_plan' && !usageCookie.trim()) {
             setError('MiMo 配额查询需要粘贴 platform.xiaomimimo.com 的 Cookie；不查配额请把策略改成「不拉取」。');
             return;

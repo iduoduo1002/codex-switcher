@@ -118,6 +118,28 @@ export const RELAY_PRESETS: RelayPreset[] = [
         mark: 'Mi', color: '#FF6900', group: 'CODING PLAN', auth_prefix: 'tp-',
         category: 'coding_plan',
     },
+    {
+        id: 'mimo_api_pay',
+        name: 'Xiaomi MiMo (按量付费 API)',
+        // MiMo 按量付费独立端点；跟 Token Plan 的 base + key 形式不同。
+        base_url: 'https://api.xiaomimimo.com/v1',
+        homepage: 'https://platform.xiaomimimo.com/console/api-keys',
+        usage_preset: null,
+        relay_protocol: 'chat_completions',
+        model_fallback: 'mimo-v2.5-pro',
+        model_map: {
+            'gpt-5.5': 'mimo-v2.5-pro',
+            'gpt-5': 'mimo-v2.5-pro',
+            'gpt-5-codex': 'mimo-v2.5-pro',
+            'gpt-4o': 'mimo-v2.5-pro',
+            'gpt-4o-mini': 'mimo-v2.5-pro',
+            'o1': 'mimo-v2.5-pro',
+            'o1-mini': 'mimo-v2.5-pro',
+        },
+        description: 'MiMo 按量付费（sk-key；非 Token Plan，无配额限制按用量计费）',
+        mark: 'Mi', color: '#FF6900', group: '三方模型', auth_prefix: 'sk-',
+        category: 'third_party',
+    },
     // ────────────────────────────────────────────────────────────────
     // A 类：通用 Responses 中转 —— 基于 new-api / sub2api / CLIProxyAPI
     // 的第三方 codex 中转都用这条。用户自己填 base_url + Bearer key。
@@ -347,6 +369,41 @@ export const RELAY_PRESETS: RelayPreset[] = [
         model_fallback: 'openai/gpt-5.5',
         description: 'OpenRouter 聚合 500+ 模型；模型 id 形如 anthropic/claude-sonnet-4.6',
         mark: 'OR', color: '#10B981', group: '三方模型', auth_prefix: 'sk-or-',
+        category: 'third_party',
+    },
+    {
+        id: 'modelscope',
+        name: '魔搭 ModelScope',
+        base_url: 'https://api-inference.modelscope.cn/v1',
+        homepage: 'https://modelscope.cn/docs/model-service/api-inference/intro',
+        usage_preset: null,
+        relay_protocol: 'chat_completions',
+        // ModelScope 用 vendor/model 形式，比如 Qwen/Qwen3-Max
+        model_fallback: 'Qwen/Qwen3-Max',
+        model_map: {
+            'gpt-5.5': 'Qwen/Qwen3-Max',
+            'gpt-5': 'Qwen/Qwen3-Max',
+            'gpt-5-codex': 'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+            'gpt-4o': 'Qwen/Qwen3-Max',
+            'gpt-4o-mini': 'Qwen/Qwen3-Next-80B-A3B-Instruct',
+            'o1': 'Qwen/Qwen3-Max',
+            'o1-mini': 'Qwen/Qwen3-Next-80B-A3B-Thinking',
+        },
+        description: '阿里魔搭 ModelScope 按量付费；OpenAI Chat 兼容（Qwen 系列为主）',
+        mark: '魔', color: '#624AFF', group: '三方模型', auth_prefix: 'ms-',
+        category: 'third_party',
+    },
+    {
+        id: 'ollama_local',
+        name: 'Ollama 本地推理',
+        base_url: 'http://localhost:11434/v1',
+        homepage: 'https://github.com/ollama/ollama/blob/main/docs/openai.md',
+        usage_preset: null,
+        relay_protocol: 'chat_completions',
+        // Ollama 0.1.30+ 暴露 OpenAI 兼容 /v1/chat/completions；模型名按本地 pulled 的 tag
+        model_fallback: 'qwen3:latest',
+        description: 'Ollama 本地推理（localhost:11434，需先 ollama pull 模型）；API Key 任意填一个非空字符串即可',
+        mark: 'O', color: '#000000', group: '三方模型', auth_prefix: 'ollama',
         category: 'third_party',
     },
     {
