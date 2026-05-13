@@ -6,6 +6,8 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square)](https://tauri.app/)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/xtftbwvfp/codex-switcher/releases/latest)
 
+**中文** | [English](#english) | [Русский](#русский)
+
 Codex Switcher 是一个面向 Codex CLI / Codex App 多账号工作流的桌面工具。它把账号管理、配额观察、本地代理、无损自动切号、中转站、Coding Plan 接入、远程账号池和 Skills 管理放在同一个 Tauri 应用里，适合长期使用 Codex CLI、Codex App，以及支持 Codex 插件的 VS Code 及其衍生 IDE 的多账号环境。
 
 **一句话：当前账号限额了，前端任务不用停，Codex Switcher 在代理层自动换号、切换中转站或接入 Coding Plan，并自动重发请求。Coding Plan 目前已支持 GLM，其他平台待实测。**
@@ -427,3 +429,213 @@ C:\Users\Administrator\Desktop\Start Codex Auto Proxy.lnk
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+---
+
+# English
+
+[中文](#codex-switcher) | **English** | [Русский](#русский)
+
+Codex Switcher is a desktop app for multi-account Codex CLI / Codex App workflows. It brings account management, quota visibility, a local proxy, lossless automatic account switching, relay endpoints, Coding Plan integration, remote account pools, and Skills management into one Tauri app. It is designed for people who use Codex CLI, Codex App, and VS Code-derived IDEs with Codex plugin support for long-running development work.
+
+**In one line: when the current account hits quota, your frontend task does not need to stop. Codex Switcher can switch accounts, switch relay endpoints, or route through a Coding Plan, then replay the request automatically. Coding Plan support is currently tested with GLM.**
+
+[Download the latest release](https://github.com/xtftbwvfp/codex-switcher/releases/latest) · [Use with glance](https://github.com/xtftbwvfp/glance)
+
+## Highlights
+
+- **Lossless account switching**: quota, ban, 401, and global-capacity failures can trigger proxy-level account switching and request replay.
+- **GLM Coding Plan support**: translates Codex `/v1/responses` traffic into OpenAI `/chat/completions` for GLM Coding Plan.
+- **Multi-account pool**: manages Codex OAuth accounts, OpenAI API keys, relay/API-key accounts, and remote account pools.
+- **Quota visibility**: tracks 5-hour and weekly quota, token usage, costs, cache savings, switch reasons, and quota cycles.
+- **Long-session friendly**: session affinity and per-account `prompt_cache_key` isolation help preserve prompt-cache benefits.
+- **Cross-tool Skills**: discover, install, sync, and link Skills across Codex, Claude, Gemini, and OpenCode-style directories.
+
+## Screenshots
+
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
+
+## Why It Exists
+
+Codex account operations often end up scattered across separate scripts: one for login, one for switching, one for proxying, and another place for quota notes. Codex Switcher keeps those workflows in one desktop app and understands Codex traffic at the proxy layer.
+
+Its key capability is not just replacing `auth.json`. The important part is **lossless switching**:
+
+- When the current account hits quota, gets banned, returns 401, or hits global capacity, the proxy can pick another usable account.
+- The frontend tool does not need to know an account changed.
+- For retryable cases, the proxy switches accounts and replays the request in the background.
+- `/v1/responses` traffic can be translated into `/chat/completions`, so GLM Coding Plan can be used even though it does not fully implement the Codex Responses API.
+- SSE and WebSocket streams are inspected for quota and ban signals before the client is forced to fail.
+
+## Recommended Combo: GLM Coding Plan + glance
+
+If you have GLM Coding Plan, you can add it to Codex Switcher as a relay backend and pair it with [glance](https://github.com/xtftbwvfp/glance).
+
+`glance` is an MCP server that offloads token-heavy but lower-difficulty work: reading many files, exploring GitHub repos, fetching web pages, OCR/image description, and browser-assisted extraction. Codex remains responsible for architecture decisions and final code changes, while GLM Coding Plan handles the heavy reading.
+
+Recommended split:
+
+- Codex Switcher handles GLM Coding Plan routing, protocol translation, automatic switching, retries, and quota visibility.
+- glance handles large context-gathering tasks and returns compact summaries to Codex.
+- Codex CLI spends less context on raw material and more on reasoning and edits.
+
+## Core Features
+
+| Area | Capabilities |
+| --- | --- |
+| Accounts | Codex OAuth accounts, OpenAI keys, relay/API-key accounts, import/export, OTP batch login |
+| Proxy | HTTP, WebSocket, SSE detection, keep-alive, LAN/ZeroTier access, local proxy port |
+| Auto switching | Lossless account switch, automatic replay, quota/ban/401/global-capacity detection |
+| Relay | `/v1/responses` to `/chat/completions`, model mapping, fallback models, provider presets |
+| GLM | GLM preset, GLM Coding Plan, GLM quota query, `reasoning_content` stream conversion |
+| Cache | Session affinity, per-account `prompt_cache_key`, cache-savings statistics |
+| Stats | Tokens, costs, model split, quota cycles, switch reasons, quota snapshots |
+| Remote | Server/client/solo modes, shared secret, remote token access, remote switching, Skills sync |
+| Skills | GitHub/local sources, install/uninstall, SSOT directory, cross-tool symlinks |
+
+## Install
+
+Download the latest build from [Releases](https://github.com/xtftbwvfp/codex-switcher/releases/latest).
+
+- macOS: `aarch64.dmg`, `x64.dmg`, or `universal.dmg`
+- Windows: `x64-setup.exe` or `x64_en-US.msi`
+- Linux: `.deb`, `.rpm`, or `.AppImage`
+
+## Run From Source
+
+Requirements:
+
+- Node.js 20+
+- Rust stable
+- Tauri 2 system dependencies
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Build:
+
+```bash
+npm run tauri build
+```
+
+## Data And Safety
+
+Codex Switcher stores accounts, tokens, quota cache, statistics, and logs on your machine. Use it only on machines and user environments you trust.
+
+Common local paths:
+
+- Codex CLI auth state: `~/.codex/auth.json`
+- Codex Switcher data: `~/.codex-switcher/`
+- Proxy log: `~/.codex-switcher/proxy.log`
+
+Do not commit `auth.json`, account exports, tokens, API keys, or relay keys to Git. Remote mode should always use a strong shared secret.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
+---
+
+# Русский
+
+[中文](#codex-switcher) | [English](#english) | **Русский**
+
+Codex Switcher — это настольное приложение для рабочих процессов с несколькими аккаунтами Codex CLI / Codex App. Оно объединяет управление аккаунтами, просмотр квот, локальный прокси, автоматическое переключение аккаунтов без потери запроса, промежуточные relay-сервисы, подключение Coding Plan, удаленные пулы аккаунтов и управление Skills в одном Tauri-приложении. Инструмент рассчитан на пользователей Codex CLI, Codex App и IDE на базе VS Code с поддержкой Codex-плагина.
+
+**Коротко: если текущий аккаунт уперся в лимит, задача во фронтенд-инструменте не должна останавливаться. Codex Switcher может автоматически сменить аккаунт, переключить промежуточный сервер или отправить запрос через Coding Plan, а затем повторить запрос. Поддержка Coding Plan сейчас проверена с GLM.**
+
+[Скачать последнюю версию](https://github.com/xtftbwvfp/codex-switcher/releases/latest) · [Использовать вместе с glance](https://github.com/xtftbwvfp/glance)
+
+## Основные Возможности
+
+- **Переключение без потери запроса**: лимиты, блокировки, 401 и ошибки глобальной емкости могут обрабатываться на уровне прокси с повторной отправкой запроса.
+- **Поддержка GLM Coding Plan**: трафик Codex `/v1/responses` переводится в OpenAI `/chat/completions`.
+- **Пул аккаунтов**: Codex OAuth, OpenAI API keys, relay/API-key аккаунты и удаленные пулы.
+- **Наблюдаемость квот**: 5-часовые и недельные квоты, токены, стоимость, cache savings, причины переключений и история циклов.
+- **Поддержка длинных сессий**: session affinity и изоляция `prompt_cache_key` по аккаунтам помогают сохранить пользу prompt cache.
+- **Skills для разных инструментов**: поиск, установка, синхронизация и symlink-распределение Skills для Codex, Claude, Gemini и OpenCode-подобных инструментов.
+
+## Скриншоты
+
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
+<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
+
+## Зачем Это Нужно
+
+Операции с аккаунтами Codex часто распадаются на отдельные скрипты: вход, смена аккаунта, прокси, заметки по квотам. Codex Switcher собирает это в одном настольном приложении и понимает поток запросов Codex на уровне прокси.
+
+Главная функция — не просто замена `auth.json`, а **переключение без потери запроса**:
+
+- Если аккаунт исчерпал квоту, заблокирован, вернул 401 или попал в global capacity, прокси выбирает другой доступный аккаунт.
+- Клиентское приложение не обязано знать, что аккаунт изменился.
+- Для повторяемых запросов прокси переключает аккаунт и отправляет запрос заново в фоне.
+- Запросы `/v1/responses` могут быть преобразованы в `/chat/completions`, что позволяет использовать GLM Coding Plan без полной реализации Codex Responses API.
+- SSE и WebSocket потоки проверяются на сигналы лимита и блокировки до того, как клиент увидит ошибку.
+
+## Рекомендуемая Связка: GLM Coding Plan + glance
+
+Если у вас есть GLM Coding Plan, его можно подключить в Codex Switcher как relay backend и использовать вместе с [glance](https://github.com/xtftbwvfp/glance).
+
+`glance` — это MCP server для тяжелых по токенам, но относительно простых задач: чтение множества файлов, исследование GitHub-репозиториев, загрузка веб-страниц, OCR/описание изображений и browser extraction. Codex остается для архитектурных решений и финальных правок, а GLM Coding Plan берет на себя объемное чтение.
+
+## Функции
+
+| Область | Возможности |
+| --- | --- |
+| Аккаунты | Codex OAuth, OpenAI keys, relay/API-key аккаунты, import/export, OTP batch login |
+| Прокси | HTTP, WebSocket, SSE detection, keep-alive, LAN/ZeroTier, локальный порт |
+| Автопереключение | Переключение без потери запроса, replay, quota/ban/401/global-capacity detection |
+| Relay | `/v1/responses` to `/chat/completions`, model mapping, fallback, provider presets |
+| GLM | GLM preset, GLM Coding Plan, GLM quota query, преобразование `reasoning_content` |
+| Cache | Session affinity, per-account `prompt_cache_key`, cache-savings statistics |
+| Stats | Tokens, cost, model split, quota cycles, switch reasons, quota snapshots |
+| Remote | Server/client/solo, shared secret, remote tokens, remote switching, Skills sync |
+| Skills | GitHub/local sources, install/uninstall, SSOT directory, cross-tool symlinks |
+
+## Установка
+
+Скачайте последнюю сборку в [Releases](https://github.com/xtftbwvfp/codex-switcher/releases/latest).
+
+- macOS: `aarch64.dmg`, `x64.dmg` или `universal.dmg`
+- Windows: `x64-setup.exe` или `x64_en-US.msi`
+- Linux: `.deb`, `.rpm` или `.AppImage`
+
+## Запуск Из Исходников
+
+Требования:
+
+- Node.js 20+
+- Rust stable
+- системные зависимости Tauri 2
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Сборка:
+
+```bash
+npm run tauri build
+```
+
+## Данные И Безопасность
+
+Codex Switcher хранит аккаунты, токены, кэш квот, статистику и логи на вашей машине. Используйте его только в доверенной среде.
+
+Типичные локальные пути:
+
+- состояние Codex CLI: `~/.codex/auth.json`
+- данные Codex Switcher: `~/.codex-switcher/`
+- лог прокси: `~/.codex-switcher/proxy.log`
+
+Не коммитьте `auth.json`, экспорты аккаунтов, токены, API keys или relay keys в Git. Для удаленного режима используйте сильный shared secret.
+
+## Лицензия
+
+MIT License. См. [LICENSE](LICENSE).
