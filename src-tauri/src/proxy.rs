@@ -30,6 +30,7 @@ use tungstenite::client::IntoClientRequest;
 
 use crate::account::AccountStore;
 use crate::session_affinity::SessionAffinity;
+use crate::session_routes::SessionRoutesStore;
 use crate::switch_log::{SwitchLogger, SwitchReason};
 use crate::token_tracker::TokenTracker;
 
@@ -256,6 +257,8 @@ struct ProxyState {
     ws_disconnect: Arc<tokio::sync::Notify>,
     switch_logger: Arc<SwitchLogger>,
     session_affinity: Arc<SessionAffinity>,
+    /// 用户级硬路由：session_id → account 强绑定
+    session_routes: Arc<Mutex<SessionRoutesStore>>,
 }
 
 /// 启动代理服务器
@@ -269,6 +272,7 @@ pub fn start(
     ws_disconnect: Arc<tokio::sync::Notify>,
     switch_logger: Arc<SwitchLogger>,
     session_affinity: Arc<SessionAffinity>,
+    session_routes: Arc<Mutex<SessionRoutesStore>>,
 ) -> tauri::async_runtime::JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
         let addr = if allow_lan {
@@ -300,6 +304,7 @@ pub fn start(
             ws_disconnect,
             switch_logger,
             session_affinity,
+            session_routes,
         });
 
         loop {
@@ -419,16 +424,74 @@ async fn get_current_token(state: &ProxyState) -> Result<(String, bool), String>
 
 /// 优先按 session affinity 找一个健康的绑定账号；若 binding 还在并指向健康号 → 用它的 token；
 /// 否则落回 current。**不修改 store.current**，纯本次请求级别的 token override。
-/// 返回 (token, is_chatgpt, account_id_used) —— account_id 给 end_signal 记账用
+///
+/// 返回 (token, is_chatgpt, account_id_used, hard_routed)
+/// - account_id 给 end_signal 记账用
+/// - hard_routed=true 表示命中用户主动定义的"硬路由"（session_routes），
+///   上层在 401/429 时应跳过 try_switch_and_retry / silent_refresh_current，
+///   把上游错误原样透回（严格模式）。
 async fn resolve_token_with_affinity(
     state: &ProxyState,
     session_key: Option<&str>,
-) -> Result<(String, bool, Option<String>), String> {
+) -> Result<(String, bool, Option<String>, bool), String> {
     let Some(sk) = session_key else {
         let (tok, is_cgpt) = get_current_token(state).await?;
         let cur = state.store.lock().ok().and_then(|s| s.current.clone());
-        return Ok((tok, is_cgpt, cur));
+        return Ok((tok, is_cgpt, cur, false));
     };
+
+    // 0) 用户级硬路由优先：session_id 命中 enabled route → 强制用绑定账号 token，
+    //    即使账号被标 banned/logged_out 也照打（让上游回 401/403），不触发自动切号。
+    let hard_route_hit: Option<(String, String, String)> = {
+        let mut routes = state
+            .session_routes
+            .lock()
+            .map_err(|e| format!("session_routes lock: {}", e))?;
+        if let Some(route) = routes.find_enabled_by_session(sk) {
+            let route_id = route.id.clone();
+            let account_id = route.account_id.clone();
+            // 取出 token + account name（用同一把 store lock，避免半路被切号）
+            let pair = {
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                match store.accounts.get(&account_id) {
+                    Some(acc) => match AccountStore::extract_access_token(&acc.auth_json) {
+                        Some(tok) => Some((tok, acc.name.clone())),
+                        None => {
+                            eprintln!(
+                                "[Proxy] Hard route 命中 {} → {}，但账号缺 access_token；按策略仍透传请求",
+                                sk, account_id
+                            );
+                            None
+                        }
+                    },
+                    None => {
+                        eprintln!(
+                            "[Proxy] Hard route 命中 {} → {}，但账号不存在；落回普通选号",
+                            sk, account_id
+                        );
+                        None
+                    }
+                }
+            };
+            if let Some((token, name)) = pair {
+                // 即使路由的账号已被标 banned/logged_out 也继续——严格模式由用户负责
+                routes.record_hit(&route_id);
+                let _ = routes.save();
+                drop(routes);
+                let is_chatgpt = token.starts_with("eyJ");
+                println!("[Proxy] Hard route hit: {} → {}", sk, name);
+                Some((token, account_id, name))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    if let Some((token, account_id, _name)) = hard_route_hit {
+        let is_chatgpt = token.starts_with("eyJ");
+        return Ok((token, is_chatgpt, Some(account_id), true));
+    }
 
     // 1) 先看绑定的号是否健康（不依赖 quota，因为 cached_quota 可能滞后；只看 banned/logged_out/token_invalid）
     // 此外：当 current 不是 Relay 但 binding 指向 Relay 时，按 relay_auto_switch_in 决定是否
@@ -498,12 +561,12 @@ async fn resolve_token_with_affinity(
         };
         let is_chatgpt = token.starts_with("eyJ");
         println!("[Proxy] Session affinity hit: {} → {}", sk, account_id);
-        return Ok((token, is_chatgpt, Some(account_id)));
+        return Ok((token, is_chatgpt, Some(account_id), false));
     }
 
     let (tok, is_cgpt) = get_current_token(state).await?;
     let cur = state.store.lock().ok().and_then(|s| s.current.clone());
-    Ok((tok, is_cgpt, cur))
+    Ok((tok, is_cgpt, cur, false))
 }
 
 /// 根据账号类型选定上游 URL 和 Host header。
@@ -1173,7 +1236,8 @@ async fn handle_request(
     }
 
     // 1. 获取 token —— 优先按 session affinity 选号，其次落回 current
-    let (token, is_chatgpt, used_account_id) =
+    //    hard_routed=true 表示命中用户主动定义的 session_routes（严格模式：不要切号/refresh）
+    let (token, is_chatgpt, used_account_id, hard_routed) =
         match resolve_token_with_affinity(&state, session_key.as_deref()).await {
             Ok(t) => t,
             Err(e) => return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, &e)),
@@ -1226,6 +1290,20 @@ async fn handle_request(
         || status_code == reqwest::StatusCode::FORBIDDEN
         || status_code == reqwest::StatusCode::PAYMENT_REQUIRED
     {
+        // 严格模式：硬路由命中时，401/402/403 一律原样透回，不切号、不 silent_refresh、
+        // 也不标记账号。用户主动指定了这个号，他需要看到上游真实错误来决定是否重登/解禁。
+        if hard_routed {
+            let resp_bytes = upstream_resp.bytes().await.unwrap_or_default();
+            println!(
+                "[Proxy] Hard route 严格模式：上游 {} 原样透回，不触发切号",
+                status_code
+            );
+            return Ok(Response::builder()
+                .status(status_code.as_u16())
+                .header("content-type", "application/json")
+                .body(full_body(resp_bytes))
+                .unwrap_or_else(|_| error_response(StatusCode::BAD_GATEWAY, "响应构建失败")));
+        }
         // 记下触发错误的账号名（在 silent_refresh / 切号污染 store.current 之前）
         let triggering_account_name: String = state
             .store
@@ -1427,6 +1505,14 @@ async fn handle_request(
     let is_compact_path = path_and_query.contains("/responses/compact");
     if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS && is_compact_path {
         let resp_bytes = upstream_resp.bytes().await.unwrap_or_default();
+        if hard_routed {
+            println!("[Proxy] Hard route 严格模式：compact 429 原样透回");
+            return Ok(Response::builder()
+                .status(429)
+                .header("content-type", "application/json")
+                .body(full_body(resp_bytes))
+                .unwrap_or_else(|_| error_response(StatusCode::TOO_MANY_REQUESTS, "429")));
+        }
         println!("[Proxy] compact 路径 429，尝试切号重试...");
         mark_current_quota_depleted(&state);
         if let Some(retry_resp) = dispatch_quota_switch_retry(
@@ -1463,6 +1549,14 @@ async fn handle_request(
     }
     if status_code == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let resp_bytes = upstream_resp.bytes().await.unwrap_or_default();
+        if hard_routed {
+            println!("[Proxy] Hard route 严格模式：429 原样透回");
+            return Ok(Response::builder()
+                .status(429)
+                .header("content-type", "application/json")
+                .body(full_body(resp_bytes))
+                .unwrap_or_else(|_| error_response(StatusCode::TOO_MANY_REQUESTS, "429")));
+        }
         let body_lower = String::from_utf8_lossy(&resp_bytes).to_lowercase();
         let is_capacity = body_lower.contains("server_is_overloaded")
             || body_lower.contains("slow_down")
@@ -1476,7 +1570,7 @@ async fn handle_request(
                 tokio::time::sleep(backoff).await;
                 let (retry_token, _) =
                     match resolve_token_with_affinity(&state, session_key.as_deref()).await {
-                        Ok((t, c, _)) => (t, c),
+                        Ok((t, c, _, _)) => (t, c),
                         Err(_) => continue,
                     };
                 if let Ok(retry_resp) = forward_with_token(
@@ -1585,7 +1679,7 @@ async fn handle_request(
                 tokio::time::sleep(backoff).await;
                 let (retry_token, _) =
                     match resolve_token_with_affinity(&state, session_key.as_deref()).await {
-                        Ok((t, c, _)) => (t, c),
+                        Ok((t, c, _, _)) => (t, c),
                         Err(_) => continue,
                     };
                 if let Ok(retry_resp) = forward_with_token(

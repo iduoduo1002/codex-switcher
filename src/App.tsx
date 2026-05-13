@@ -14,12 +14,13 @@ import { Settings } from './components/Settings';
 import { Proxy } from './components/Proxy';
 import { Stats } from './components/Stats';
 import { Skills } from './components/Skills';
+import { SessionRoutes } from './components/SessionRoutes';
 import CachePanel from './components/CachePanel';
 import { ConfirmModal } from './components/ConfirmModal';
 import { RelayImportConfirm } from './components/RelayImportConfirm';
 import './App.css';
 
-type PageType = 'dashboard' | 'accounts' | 'proxy' | 'stats' | 'cache' | 'skills' | 'settings';
+type PageType = 'dashboard' | 'accounts' | 'proxy' | 'routes' | 'stats' | 'cache' | 'skills' | 'settings';
 
 function App() {
   const {
@@ -326,6 +327,12 @@ function App() {
             代理
           </button>
           <button
+            className={`nav-item ${currentPage === 'routes' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('routes')}
+          >
+            路由
+          </button>
+          <button
             className={`nav-item ${currentPage === 'stats' ? 'active' : ''}`}
             onClick={() => setCurrentPage('stats')}
           >
@@ -434,6 +441,8 @@ function App() {
           />
         ) : currentPage === 'proxy' ? (
           <Proxy />
+        ) : currentPage === 'routes' ? (
+          <SessionRoutes />
         ) : currentPage === 'stats' ? (
           <Stats />
         ) : currentPage === 'cache' ? (

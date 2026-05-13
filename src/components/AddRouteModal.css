@@ -1,0 +1,299 @@
+/* AddRouteModal — picks (session, account) pair.
+ * Reuses the .cs-relay-modal* shell from AddRelayModal.css for the overall
+ * dark-themed modal frame; this file only adds the route-specific bits. */
+
+.cs-route-modal__body-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Section block — visual grouping of the three steps */
+.cs-route-section {
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid var(--r-border, #1e293b);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+
+.cs-route-section__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.cs-route-section__title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--r-fg-2, #94a3b8);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cs-route-section__num {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--r-accent-purple, #8b5cf6);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Source-mode toggle (recent vs. manual) */
+.cs-route-toggle {
+    display: inline-flex;
+    background: var(--r-bg-elevated, #1e293b);
+    border: 1px solid var(--r-border, #1e293b);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.cs-route-toggle__btn {
+    border: none;
+    background: transparent;
+    color: var(--r-fg-2, #94a3b8);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.cs-route-toggle__btn:hover {
+    color: var(--r-fg-1, #e2e8f0);
+}
+
+.cs-route-toggle__btn--active {
+    background: var(--r-accent-purple, #8b5cf6);
+    color: #fff;
+}
+
+/* Search + filter row */
+.cs-route-filter-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.cs-route-filter-row .cs-rinput,
+.cs-route-filter-row .cs-rselect {
+    flex: 1;
+    min-width: 0;
+}
+
+.cs-route-filter-row .cs-rselect {
+    flex: 0 0 200px;
+}
+
+/* Session list (scrollable) */
+.cs-route-session-list {
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+}
+
+.cs-route-session-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    background: var(--r-bg-elevated, #1e293b);
+    border: 1px solid var(--r-border, #1e293b);
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--r-fg-1, #e2e8f0);
+    font-family: inherit;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cs-route-session-row:hover {
+    border-color: var(--r-accent-purple, #8b5cf6);
+    background: rgba(139, 92, 246, 0.06);
+}
+
+.cs-route-session-row--selected {
+    border-color: var(--r-accent-purple, #8b5cf6);
+    background: rgba(139, 92, 246, 0.12);
+    box-shadow: 0 0 0 1px var(--r-accent-purple, #8b5cf6);
+}
+
+.cs-route-session-row__top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.cs-route-session-row__time {
+    color: var(--r-fg-2, #94a3b8);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.cs-route-session-row__sid {
+    font-family: var(--r-font-mono, monospace);
+    font-size: 11px;
+    color: var(--r-fg-muted, #64748b);
+    flex-shrink: 0;
+}
+
+.cs-route-session-row__cwd {
+    font-family: var(--r-font-mono, monospace);
+    font-size: 11px;
+    color: var(--r-fg-1, #e2e8f0);
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+.cs-route-session-row__model {
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+
+.cs-route-session-row__preview {
+    font-size: 11px;
+    color: var(--r-fg-muted, #64748b);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+}
+
+.cs-route-empty {
+    padding: 24px 12px;
+    text-align: center;
+    color: var(--r-fg-muted, #64748b);
+    font-size: 12px;
+    background: var(--r-bg-elevated, #1e293b);
+    border: 1px dashed var(--r-border-strong, #334155);
+    border-radius: 8px;
+}
+
+.cs-route-loading {
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--r-fg-muted, #64748b);
+    font-size: 12px;
+}
+
+/* Account list (similar to session list but smaller cards) */
+.cs-route-account-list {
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+}
+
+.cs-route-account-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--r-bg-elevated, #1e293b);
+    border: 1px solid var(--r-border, #1e293b);
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--r-fg-1, #e2e8f0);
+    font-family: inherit;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cs-route-account-row:hover {
+    border-color: var(--r-accent-purple, #8b5cf6);
+    background: rgba(139, 92, 246, 0.06);
+}
+
+.cs-route-account-row--selected {
+    border-color: var(--r-accent-purple, #8b5cf6);
+    background: rgba(139, 92, 246, 0.12);
+    box-shadow: 0 0 0 1px var(--r-accent-purple, #8b5cf6);
+}
+
+.cs-route-account-row__radio {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid var(--r-border-strong, #334155);
+    background: transparent;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.cs-route-account-row--selected .cs-route-account-row__radio {
+    border-color: var(--r-accent-purple, #8b5cf6);
+    background: var(--r-accent-purple, #8b5cf6);
+}
+
+.cs-route-account-row--selected .cs-route-account-row__radio::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.cs-route-account-row__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-route-account-row__health {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cs-route-account-row__health--ok {
+    background: var(--r-accent-green, #10b981);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+}
+
+.cs-route-account-row__health--bad {
+    background: var(--r-accent-red, #ef4444);
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+}
+
+.cs-route-account-row__quota {
+    font-size: 11px;
+    color: var(--r-fg-muted, #64748b);
+    font-family: var(--r-font-mono, monospace);
+    flex-shrink: 0;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cs-route-hint {
+    font-size: 11px;
+    color: var(--r-fg-muted, #64748b);
+    margin-top: 4px;
+    line-height: 1.5;
+}

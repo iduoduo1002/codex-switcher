@@ -4,6 +4,7 @@
 
 mod account;
 mod bulk_import;
+mod codex_sessions;
 mod deep_link;
 mod ide_control;
 pub mod mailbox;
@@ -19,6 +20,7 @@ mod remote_server;
 mod scheduler;
 pub mod sentinel;
 mod session_affinity;
+mod session_routes;
 mod skills;
 mod switch_log;
 mod token_tracker;
@@ -84,6 +86,8 @@ pub struct AppState {
     pub ws_disconnect: std::sync::Arc<tokio::sync::Notify>,
     pub switch_logger: std::sync::Arc<switch_log::SwitchLogger>,
     pub session_affinity: std::sync::Arc<session_affinity::SessionAffinity>,
+    /// 用户级硬路由：session_id → account 强绑定。持久化到 ~/.codex-switcher/session_routes.json
+    pub session_routes: std::sync::Arc<std::sync::Mutex<session_routes::SessionRoutesStore>>,
     pub quota_refresh_handle: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub refresh_locks: RefreshLockManager,
     pub remote_server_handle: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
@@ -102,6 +106,9 @@ impl AppState {
             ws_disconnect: std::sync::Arc::new(tokio::sync::Notify::new()),
             switch_logger: switch_log::SwitchLogger::new(),
             session_affinity: std::sync::Arc::new(session_affinity::SessionAffinity::new()),
+            session_routes: std::sync::Arc::new(std::sync::Mutex::new(
+                session_routes::SessionRoutesStore::load(),
+            )),
             quota_refresh_handle: std::sync::Mutex::new(None),
             refresh_locks: RefreshLockManager::default(),
             remote_server_handle: std::sync::Mutex::new(None),
@@ -322,6 +329,7 @@ fn update_settings(
                     state.ws_disconnect.clone(),
                     state.switch_logger.clone(),
                     state.session_affinity.clone(),
+                    state.session_routes.clone(),
                 );
                 *proxy_handle = Some(handle);
                 println!("[Proxy] 代理已启动 (端口 {})", settings.proxy_port);
@@ -347,6 +355,7 @@ fn update_settings(
                 state.ws_disconnect.clone(),
                 state.switch_logger.clone(),
                 state.session_affinity.clone(),
+                state.session_routes.clone(),
             );
             *proxy_handle = Some(handle);
             println!(
@@ -3417,6 +3426,100 @@ fn get_session_bindings(
     Ok(state.session_affinity.snapshot())
 }
 
+// ── Session Routes（用户级硬路由）命令 ──
+
+/// 列出所有 session 硬路由（按 created_at desc）
+#[tauri::command]
+async fn list_session_routes(
+    state: State<'_, AppState>,
+) -> Result<Vec<session_routes::SessionRoute>, String> {
+    let store = state
+        .session_routes
+        .lock()
+        .map_err(|e| format!("session_routes lock: {}", e))?;
+    Ok(store.list())
+}
+
+/// 新增 / upsert 一条 session 硬路由（按 session_id 去重，hit_count 在 upsert 时保留）
+#[tauri::command]
+async fn add_session_route(
+    state: State<'_, AppState>,
+    session_id: String,
+    account_id: String,
+    label: Option<String>,
+) -> Result<session_routes::SessionRoute, String> {
+    let mut store = state
+        .session_routes
+        .lock()
+        .map_err(|e| format!("session_routes lock: {}", e))?;
+    let route = store.add(session_id, account_id, label);
+    store.save()?;
+    Ok(route)
+}
+
+/// 删除一条 session 硬路由
+#[tauri::command]
+async fn delete_session_route(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let mut store = state
+        .session_routes
+        .lock()
+        .map_err(|e| format!("session_routes lock: {}", e))?;
+    if !store.delete(&id) {
+        return Err(format!("session route 不存在: {}", id));
+    }
+    store.save()?;
+    Ok(())
+}
+
+/// 启用 / 禁用一条 session 硬路由（不删，可继续保留 hit_count）
+#[tauri::command]
+async fn toggle_session_route(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut store = state
+        .session_routes
+        .lock()
+        .map_err(|e| format!("session_routes lock: {}", e))?;
+    if !store.toggle(&id, enabled) {
+        return Err(format!("session route 不存在: {}", id));
+    }
+    store.save()?;
+    Ok(())
+}
+
+/// 修改一条 session 硬路由的 label
+#[tauri::command]
+async fn update_session_route_label(
+    state: State<'_, AppState>,
+    id: String,
+    label: Option<String>,
+) -> Result<(), String> {
+    let mut store = state
+        .session_routes
+        .lock()
+        .map_err(|e| format!("session_routes lock: {}", e))?;
+    if !store.update_label(&id, label) {
+        return Err(format!("session route 不存在: {}", id));
+    }
+    store.save()?;
+    Ok(())
+}
+
+/// 扫描 ~/.codex/sessions 下的本地 session 列表（用于前端"挑一条会话来绑定"）
+#[tauri::command]
+async fn list_codex_sessions(
+    limit: Option<usize>,
+    project_filter: Option<String>,
+    days_back: Option<u32>,
+) -> Result<Vec<codex_sessions::CodexSession>, String> {
+    codex_sessions::list_codex_sessions(limit, project_filter, days_back)
+}
+
 // ── Skills 管理命令 ──
 
 #[tauri::command]
@@ -4495,6 +4598,7 @@ pub fn run() {
                     state.ws_disconnect.clone(),
                     state.switch_logger.clone(),
                     state.session_affinity.clone(),
+                    state.session_routes.clone(),
                 );
                 let mut proxy_handle = state.proxy_handle.lock().unwrap();
                 *proxy_handle = Some(handle);
@@ -4713,6 +4817,12 @@ pub fn run() {
             get_plan_capacity_estimates,
             get_account_token_history,
             get_session_bindings,
+            list_session_routes,
+            add_session_route,
+            delete_session_route,
+            toggle_session_route,
+            update_session_route_label,
+            list_codex_sessions,
             force_auth_resync,
             get_switch_history,
             get_switch_stats,
