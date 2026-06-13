@@ -1,18 +1,20 @@
 # Codex Switcher
 
-[![Release](https://img.shields.io/github/v/release/xtftbwvfp/codex-switcher?style=flat-square)](https://github.com/xtftbwvfp/codex-switcher/releases/latest)
-[![Release Build](https://img.shields.io/github/actions/workflow/status/xtftbwvfp/codex-switcher/release.yml?branch=main&style=flat-square&label=release)](https://github.com/xtftbwvfp/codex-switcher/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/iduoduo1002/codex-switcher?style=flat-square)](https://github.com/iduoduo1002/codex-switcher/releases/latest)
+[![Release Build](https://img.shields.io/github/actions/workflow/status/iduoduo1002/codex-switcher/release.yml?branch=main&style=flat-square&label=release)](https://github.com/iduoduo1002/codex-switcher/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square)](https://tauri.app/)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/xtftbwvfp/codex-switcher/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/iduoduo1002/codex-switcher/releases/latest)
 
 **中文** | [English](#english) | [Русский](#русский)
 
 Codex Switcher 是一个面向 Codex CLI / Codex App 多账号工作流的桌面工具。它把账号管理、配额观察、本地代理、无损自动切号、中转站、Coding Plan 接入、远程账号池和 Skills 管理放在同一个 Tauri 应用里，适合长期使用 Codex CLI、Codex App，以及支持 Codex 插件的 VS Code 及其衍生 IDE 的多账号环境。
 
+**仓库说明：当前增强版主线以 `iduoduo1002/codex-switcher` 为准，下载、发布和截图资源都指向这个仓库。下面提到的 `glance` 仍然是可选的外部伴侣项目，不属于本仓库。**
+
 **一句话：当前账号限额了，前端任务不用停，Codex Switcher 在代理层自动换号、切换中转站或接入 Coding Plan，并自动重发请求。Coding Plan 目前已支持 GLM 和 Xiaomi MiMo Token Plan，其他平台待实测。**
 
-[下载最新版](https://github.com/xtftbwvfp/codex-switcher/releases/latest) · [配合 glance 使用](https://github.com/xtftbwvfp/glance)
+[下载最新版](https://github.com/iduoduo1002/codex-switcher/releases/latest) · [配合 glance 使用](https://github.com/xtftbwvfp/glance)
 
 ## 亮点
 
@@ -51,25 +53,25 @@ Codex Switcher 是一个面向 Codex CLI / Codex App 多账号工作流的桌面
 
 ### 桌面应用
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/4.png" alt="Codex Switcher screenshot 4" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/4.png" alt="Codex Switcher screenshot 4" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/5.png" alt="Codex Switcher screenshot 5" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/5.png" alt="Codex Switcher screenshot 5" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/6.png" alt="Codex Switcher screenshot 6" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/6.png" alt="Codex Switcher screenshot 6" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/7.png" alt="Codex Switcher screenshot 7" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/7.png" alt="Codex Switcher screenshot 7" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/8.png" alt="Codex Switcher screenshot 8" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/8.png" alt="Codex Switcher screenshot 8" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/9.png" alt="Codex Switcher screenshot 9 — 会话路由列表" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/9.png" alt="Codex Switcher screenshot 9 — 会话路由列表" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/10.png" alt="Codex Switcher screenshot 10 — 添加路由 / 当前活跃会话一键绑定" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/10.png" alt="Codex Switcher screenshot 10 — 添加路由 / 当前活跃会话一键绑定" width="100%">
 
 ## 为什么需要它
 
@@ -156,9 +158,9 @@ Codex Switcher 可以启动本地 HTTP/WebSocket 代理，让 Codex CLI 或其�
 
 > v0.6.0 新增。把"某一条 Codex 对话"硬绑到指定账号，**绑完立刻生效，不需要重启 codex、不需要重启 Codex Switcher**。适合"这个任务用 GLM Coding Plan，这个任务跑 MiMo，剩下都跑 ChatGPT"这种混合工作流。
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/9.png" alt="路由列表" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/9.png" alt="路由列表" width="100%">
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/10.png" alt="添加路由 - 当前活跃会话一键绑定" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/10.png" alt="添加路由 - 当前活跃会话一键绑定" width="100%">
 
 #### 它解决什么问题
 
@@ -509,7 +511,7 @@ Codex Switcher 内置 Skills 管理页面，用于把一组可复用 Agent 能�
 
 ## 安装
 
-从 [Releases](https://github.com/xtftbwvfp/codex-switcher/releases/latest) 下载最新版本。
+从 [Releases](https://github.com/iduoduo1002/codex-switcher/releases/latest) 下载最新版本。
 
 ### 下载哪个文件
 
@@ -629,7 +631,7 @@ Codex Switcher is a desktop app for multi-account Codex CLI / Codex App workflow
 
 **In one line: when the current account hits quota, your frontend task does not need to stop. Codex Switcher can switch accounts, switch relay endpoints, or route through a Coding Plan, then replay the request automatically. Coding Plan support is currently tested with GLM and Xiaomi MiMo Token Plan.**
 
-[Download the latest release](https://github.com/xtftbwvfp/codex-switcher/releases/latest) · [Use with glance](https://github.com/xtftbwvfp/glance)
+[Download the latest release](https://github.com/iduoduo1002/codex-switcher/releases/latest) · [Use with glance](https://github.com/xtftbwvfp/glance)
 
 ## Highlights
 
@@ -644,9 +646,9 @@ Codex Switcher is a desktop app for multi-account Codex CLI / Codex App workflow
 
 ## Screenshots
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
 
 ## Why It Exists
 
@@ -689,7 +691,7 @@ Recommended split:
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/xtftbwvfp/codex-switcher/releases/latest).
+Download the latest build from [Releases](https://github.com/iduoduo1002/codex-switcher/releases/latest).
 
 - macOS: `aarch64.dmg`, `x64.dmg`, or `universal.dmg`
 - Windows: `x64-setup.exe` or `x64_en-US.msi`
@@ -740,7 +742,7 @@ Codex Switcher — это настольное приложение для ра�
 
 **Коротко: если текущий аккаунт уперся в лимит, задача во фронтенд-инструменте не должна останавливаться. Codex Switcher может автоматически сменить аккаунт, переключить промежуточный сервер или отправить запрос через Coding Plan, а затем повторить запрос. Поддержка Coding Plan сейчас проверена с GLM и Xiaomi MiMo Token Plan.**
 
-[Скачать последнюю версию](https://github.com/xtftbwvfp/codex-switcher/releases/latest) · [Использовать вместе с glance](https://github.com/xtftbwvfp/glance)
+[Скачать последнюю версию](https://github.com/iduoduo1002/codex-switcher/releases/latest) · [Использовать вместе с glance](https://github.com/xtftbwvfp/glance)
 
 ## Основные Возможности
 
@@ -754,9 +756,9 @@ Codex Switcher — это настольное приложение для ра�
 
 ## Скриншоты
 
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
-<img src="https://raw.githubusercontent.com/xtftbwvfp/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/1.png" alt="Codex Switcher screenshot 1" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/2.png" alt="Codex Switcher screenshot 2" width="100%">
+<img src="https://raw.githubusercontent.com/iduoduo1002/codex-switcher/main/assets/images/3.png" alt="Codex Switcher screenshot 3" width="100%">
 
 ## Зачем Это Нужно
 
@@ -793,7 +795,7 @@ Codex Switcher — это настольное приложение для ра�
 
 ## Установка
 
-Скачайте последнюю сборку в [Releases](https://github.com/xtftbwvfp/codex-switcher/releases/latest).
+Скачайте последнюю сборку в [Releases](https://github.com/iduoduo1002/codex-switcher/releases/latest).
 
 - macOS: `aarch64.dmg`, `x64.dmg` или `universal.dmg`
 - Windows: `x64-setup.exe` или `x64_en-US.msi`
